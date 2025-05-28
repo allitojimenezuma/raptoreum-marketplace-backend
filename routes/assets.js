@@ -3,6 +3,7 @@ import FormData from 'form-data';
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import { Asset, Usuario, Wallet } from '../model/index.js';
+import { Provider } from 'rtnft-client';
 
 const router = express.Router();
 
@@ -51,34 +52,19 @@ async function uploadBase64Image(dataUrl) {
 router.post('/createAsset', async (req, res) => {
     try {
         const foto = req.body.foto;
-        let fotoHash;
-        // uploadBase64Image(foto)
-        //     .then(async (response) => {
-        //         fotoHash = response; // Guarda el hash de la imagen subida
-        //         console.log('Imagen subida exitosamente:', response);
-        //     })
-        //     .catch((error) => {
-        //         console.error('Error al subir la imagen:', error);
-        //         res.status(500).json({ error: 'Error al subir la imagen' });
-        //     });
+        let fotoHash = '';
+        if (foto) {
+            await uploadBase64Image(foto)
+                .then(async (response) => {
+                    fotoHash = response; // Guarda el hash de la imagen subida
+                    console.log('Imagen subida exitosamente:', response);
+                })
+                .catch((error) => {
+                    console.error('Error al subir la imagen:', error);
+                    res.status(500).json({ error: 'Error al subir la imagen' });
+                });
+        }
 
-        /*
-        ------------------------------------------------------------------------------------------------------------------------------------------------+
-| Assets | CREATE TABLE `Assets` (
-  `id` int NOT NULL AUTO_INCREMENT,
-  `nombre` varchar(255) DEFAULT NULL,
-  `createdAt` datetime NOT NULL,
-  `updatedAt` datetime NOT NULL,
-  `asset_id` varchar(255) DEFAULT NULL,
-  `WalletId` int DEFAULT NULL,
-  `referenceHash` varchar(255) DEFAULT NULL,
-  `descipcion` varchar(255) DEFAULT NULL,
-  `precio` int DEFAULT NULL,
-  PRIMARY KEY (`id`),
-  KEY `WalletId` (`WalletId`),
-  CONSTRAINT `Assets_ibfk_1` FOREIGN KEY (`WalletId`) REFERENCES `Wallets` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci |
-        */
 
         const nombre = req.body.nombre;
         const descripcion = req.body.descripcion;
@@ -86,13 +72,11 @@ router.post('/createAsset', async (req, res) => {
         const token = req.body.token;
         const email = jwt.decode(token).email;
 
-        console.log("email:", email);
         const usuario = await Usuario.findOne({
             where: {
                 email
             }
         });
-        console.log('Usuario encontrado:', usuario.id);
 
         const wallet = await Wallet.findOne({
             where: {
@@ -100,23 +84,24 @@ router.post('/createAsset', async (req, res) => {
             }
         });
 
-        console.log('Wallet encontrada:', wallet.id);
+        const provider = new Provider(); //Provider de Raptoreum
+        const assetid = await provider.create_Asset({ name: nombre, referenceHash: fotoHash }, "dirNode", "dirCustomer");
 
-        
+        console.log('Asset ID creado en Raptoreum:', assetid);
 
+        // Crea el asset en la base de datos
+        await Asset.create({
+            name: nombre,
+            description: descripcion,
+            price : precio,
+            referenceHash: fotoHash,
+            asset_id: assetid, 
+            WalletId: wallet.id
+        });
 
-
-        // Asset.create({
-        //     nombre: nombre,
-        //     descipcion: descripcion,
-        //     precio: precio,
-        //     referenceHash: fotoHash,
-        //     WalletId: wallet.id
-        // })
-
-
-
-
+        res.status(200).json({
+            message: 'Asset created successfully. Wait at least 10 minutes to see it in the marketplace.',
+        });
 
     } catch (error) {
         console.error('Error creating asset:', error);
