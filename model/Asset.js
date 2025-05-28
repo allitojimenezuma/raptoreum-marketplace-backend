@@ -5,15 +5,15 @@ const Asset = sequelize.define('Asset', {
   asset_id: {
     type: DataTypes.STRING
   },
-  nombre: {
+  name: {
     type: DataTypes.STRING,
     allowNull: true
   },
-  descipcion: {
+  description: {
     type: DataTypes.STRING,
     allowNull: true
   },
-  precio: {
+  price: {
     type: DataTypes.INTEGER,
     allowNull: true
   },
