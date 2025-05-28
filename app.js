@@ -2,6 +2,8 @@ import express from 'express';
 import authRouter from './routes/auth.js';
 import mainRouter from './routes/main.js';
 import userRouter from './routes/user.js';
+import assetRouter from './routes/assets.js';
+
 import cors from 'cors';
 
 const app = express();
@@ -18,6 +20,7 @@ app.use(express.json());
 app.use('/auth', authRouter);
 app.use('/user', userRouter);
 app.use('/', mainRouter);
+app.use('/assets', assetRouter);
 
 
 app.listen(3000, () => {

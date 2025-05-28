@@ -9,6 +9,14 @@ const Asset = sequelize.define('Asset', {
     type: DataTypes.STRING,
     allowNull: true
   },
+  descipcion: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  precio: {
+    type: DataTypes.INTEGER,
+    allowNull: true
+  },
   referenceHash: {
     type: DataTypes.STRING,
     allowNull: true

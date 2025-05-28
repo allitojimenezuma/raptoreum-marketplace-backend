@@ -32,20 +32,32 @@ async function getUsuario() {
 
 async function getAsset() {
   try {
-    //obtener usuario por id
-    const asset_id = "32fc9cbf85d2254cfea3f2a2ea009b8717d0980d5a0934c52da2fbc89b6b4bab"; // Cambia esto al ID del usuario que deseas obtener
-    const asset = await Asset.findOne({ where: { asset_id: asset_id } });
-    console.log('✅ Asset encontrado:', asset.toJSON());
+    // //obtener usuario por id
+    // const asset_id = "32fc9cbf85d2254cfea3f2a2ea009b8717d0980d5a0934c52da2fbc89b6b4bab"; // Cambia esto al ID del usuario que deseas obtener
+    // const asset = await Asset.findOne({ where: { asset_id: asset_id } });
+    // console.log('✅ Asset encontrado:', asset.toJSON());
 
+
+    // const provider = new Provider();
+    // provider.getassetdetailsbyid(asset_id)
+    //   .then(details => {
+    //     console.log('Detalles del asset:', details);
+    //   })
+    //   .catch(err => {
+    //     console.error('Error al obtener detalles:', err);
+    //   });
 
     const provider = new Provider();
-    provider.getassetdetailsbyid(asset_id)
+    provider.getBlockchainInfo()
       .then(details => {
-        console.log('Detalles del asset:', details);
+        console.log(details);
       })
       .catch(err => {
         console.error('Error al obtener detalles:', err);
       });
+
+
+
 
 
   } catch (error) {
