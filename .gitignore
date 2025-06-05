@@ -21,3 +21,6 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# scripts que no quiero subir
+/scripts/migrarWallets.js

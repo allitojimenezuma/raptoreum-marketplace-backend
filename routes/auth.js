@@ -3,6 +3,7 @@ import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { Usuario, Wallet } from '../model/index.js';
 // import createWallet from '../utils/createWallet.js'; 
+import { Wallet as RTWallet } from '../../rptClient_NPM/wallet.js';
 
 import dotenv from 'dotenv';
 import { encrypt } from '../utils/encryption.js';
@@ -11,10 +12,11 @@ dotenv.config();
 const router = express.Router();
 
 const createWallet = async () => {
-  // Simulación de creación de wallet
+  // Crear wallet real de Raptoreum usando rtnft-client
+  const wallet = RTWallet.createRandom();
   return {
-    pubKey: 'publicKey123',
-    wif: 'wif123'
+    pubKey: wallet.getAddress(),
+    wif: wallet.getWIF()
   };
 };
 
