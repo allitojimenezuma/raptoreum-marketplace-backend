@@ -109,4 +109,48 @@ router.post('/createAsset', async (req, res) => {
     }
 });
 
+// Traspaso de asset entre wallets (compra)
+router.post('/buy/:id', async (req, res) => {
+  try {
+    console.log('--- INICIO COMPRA ASSET ---');
+    const assetId = req.params.id;
+    const token = req.headers.authorization?.replace('Bearer ', '');
+    console.log('assetId:', assetId);
+    console.log('token:', token);
+    if (!token) return res.status(401).json({ message: 'Token requerido' });
+    const decoded = jwt.decode(token);
+    console.log('decoded:', decoded);
+    if (!decoded?.email) return res.status(401).json({ message: 'Token inválido' });
+
+    // Asset y wallet origen
+    const asset = await Asset.findOne({ where: { id: assetId }, include: Wallet });
+    console.log('asset:', asset?.toJSON?.() || asset);
+    if (!asset) return res.status(404).json({ message: 'Asset no encontrado' });
+    const walletOrigen = await Wallet.findOne({ where: { id: asset.WalletId } });
+    console.log('walletOrigen:', walletOrigen?.toJSON?.() || walletOrigen);
+    if (!walletOrigen) return res.status(404).json({ message: 'Wallet origen no encontrada' });
+
+    // Wallet destino (usuario comprador)
+    const usuarioDestino = await Usuario.findOne({ where: { email: decoded.email }, include: { model: Wallet, as: 'wallets' } });
+    console.log('usuarioDestino:', usuarioDestino?.toJSON?.() || usuarioDestino);
+    if (!usuarioDestino || !usuarioDestino.wallets?.length) return res.status(404).json({ message: 'Wallet destino no encontrada' });
+    const walletDestino = usuarioDestino.wallets[0];
+    console.log('walletDestino:', walletDestino?.toJSON?.() || walletDestino);
+
+    // Desencriptar WIF origen
+    const { decrypt } = await import('../utils/encryption.js');
+    const wifOrigen = decrypt(walletOrigen.wif);
+    console.log('wifOrigen:', wifOrigen);
+
+    // 2. Traspaso lógico: solo cambiar el WalletId en la base de datos
+    await asset.update({ WalletId: walletDestino.id });
+    console.log('Asset actualizado en BD con nuevo WalletId:', walletDestino.id);
+
+    res.json({ message: 'Compra realizada y asset transferido (solo en base de datos)' });
+  } catch (err) {
+    console.error('Error en la compra de asset:', err);
+    res.status(500).json({ message: 'Error al realizar la compra', error: err.message });
+  }
+});
+
 export default router;
