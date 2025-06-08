@@ -51,7 +51,21 @@ async function uploadBase64Image(dataUrl) {
 
 router.post('/createAsset', async (req, res) => {
     try {
-        const foto = req.body.foto;
+        // Obtener el token del header Authorization
+        const authHeader = req.headers.authorization;
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return res.status(401).json({ error: 'Token de autorización requerido' });
+        }
+        const token = authHeader.replace('Bearer ', '');
+        let email;
+        try {
+            const decoded = jwt.verify(token, process.env.JWT_SECRET);
+            email = decoded.email;
+        } catch (err) {
+            return res.status(401).json({ error: 'Token inválido' });
+        }
+
+        const { nombre, descripcion, precio, foto } = req.body;
         let fotoHash = '';
         if (foto) {
             await uploadBase64Image(foto)
@@ -61,28 +75,23 @@ router.post('/createAsset', async (req, res) => {
                 })
                 .catch((error) => {
                     console.error('Error al subir la imagen:', error);
-                    res.status(500).json({ error: 'Error al subir la imagen' });
+                    return res.status(500).json({ error: 'Error al subir la imagen' });
                 });
         }
 
-
-        const nombre = req.body.nombre;
-        const descripcion = req.body.descripcion;
-        const precio = req.body.precio;
-        const token = req.body.token;
-        const email = jwt.decode(token).email;
-
         const usuario = await Usuario.findOne({
-            where: {
-                email
-            }
+            where: { email }
         });
+        if (!usuario) {
+            return res.status(404).json({ error: 'Usuario no encontrado' });
+        }
 
         const wallet = await Wallet.findOne({
-            where: {
-                usuarioId: usuario.id
-            }
+            where: { usuarioId: usuario.id }
         });
+        if (!wallet) {
+            return res.status(404).json({ error: 'Wallet no encontrada para el usuario' });
+        }
 
         const provider = new Provider(); //Provider de Raptoreum
         const assetid = await provider.create_Asset({ name: nombre, referenceHash: fotoHash }, "dirNode", "dirCustomer");
@@ -100,7 +109,7 @@ router.post('/createAsset', async (req, res) => {
         });
 
         res.status(200).json({
-            message: 'Asset created successfully. Wait at least 10 minutes to see it in the marketplace.',
+            message: 'Asset creado correctamente. Espera unos minutos para verlo en el marketplace.',
         });
 
     } catch (error) {

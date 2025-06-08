@@ -4,12 +4,29 @@ import jwt from 'jsonwebtoken';
 import { Usuario, Wallet } from '../model/index.js';
 // import createWallet from '../utils/createWallet.js'; 
 import { Wallet as RTWallet } from '../../rptClient_NPM/wallet.js';
-
 import dotenv from 'dotenv';
 import { encrypt } from '../utils/encryption.js';
+import crypto from 'crypto';
+import nodemailer from 'nodemailer';
 dotenv.config();
 
 const router = express.Router();
+
+// Temporal: almacena usuarios pendientes de verificación
+const pendingUsers = {};
+
+// Configura tu transporte de correo (ajusta con tus credenciales)
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: 'raptoreummarketplace@gmail.com',
+    pass: 'ifzvtlpyflxvdzzc'
+    // Pendiente de quitar contraseña hardcodeada
+  },
+  tls: {
+    rejectUnauthorized: false
+  }
+});
 
 const createWallet = async () => {
   // Crear wallet real de Raptoreum usando rtnft-client
@@ -20,14 +37,10 @@ const createWallet = async () => {
   };
 };
 
-
-// Registro
+// Ruta de registro con verificación por email
 router.post('/signup', async (req, res) => {
   try {
     const { name, email, password } = req.body;
-    console.log('Datos de registro:', req.body);
-
-    // Validación básica
     if (!name || !email || !password) {
       return res.status(400).json({ error: 'Faltan campos' });
     }
@@ -39,29 +52,50 @@ router.post('/signup', async (req, res) => {
       return res.status(400).json({ error: 'El usuario ya existe' });
     }
 
+    const token = crypto.randomBytes(32).toString('hex');
     // Hashear la contraseña
     const hashed = await bcrypt.hash(password, 10);
+    pendingUsers[token] = { name, email, password: hashed, createdAt: Date.now() };
 
-    // Crear usuario
-    const usuario = await Usuario.create({ name, email, password: hashed });
+    const verificationLink = `http://localhost:3000/auth/verify?token=${token}`;
 
-    // Crear wallet usando tu función
-    const { pubKey, wif } = await createWallet();
-    const encryptedWif = encrypt(wif);
-
-
-    // Guardar wallet asociada al usuario
-    await Wallet.create({
-      direccion: pubKey,
-      wif: encryptedWif,
-      UsuarioId: usuario.id
+    // Enviar correo de verificación
+    await transporter.sendMail({
+      to: email,
+      subject: 'Verificación de correo - Registro en Raptoreum Asset Marketplace',
+      html: `${name} haz clic en el siguiente enlace para verificar tu correo: <a href="${verificationLink}">${verificationLink}</a>`
     });
 
-    res.status(201).json({ message: 'Usuario registrado', wallet: { pubKey, wif } });
+    res.status(200).json({ message: 'Registro correcto. Verifica tu correo para continuar.' });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Error en el registro' });
+    console.error('Error en /signup:', err);
+    res.status(500).json({ error: 'Error interno en el registro' });
   }
+});
+
+// Ruta de verificación
+router.get('/verify', async (req, res) => {
+  const { token } = req.query;
+  const user = pendingUsers[token];
+  if (!user) return res.status(400).send('Token inválido o expirado');
+
+  // Crear wallet para el usuario
+  const walletData = await createWallet();
+  // Crear usuario en la base de datos
+  const usuario = await Usuario.create({
+    name: user.name,
+    email: user.email,
+    password: user.password
+  });
+  // Asociar wallet
+  await Wallet.create({
+    direccion: walletData.pubKey, // Cambiado de pubKey a direccion
+    wif: encrypt(walletData.wif),
+    usuarioId: usuario.id
+  });
+
+  delete pendingUsers[token];
+  res.send('Correo verificado, usuario registrado.');
 });
 
 // Login
