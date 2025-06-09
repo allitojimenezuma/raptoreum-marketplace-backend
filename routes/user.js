@@ -62,6 +62,7 @@ router.post('/info', async (req, res) => {
 
     res.json({
       user: {
+        name: user.name,
         id: user.id,
         email: user.email,
         token: user.token
