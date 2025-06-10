@@ -10,12 +10,12 @@ import cors from 'cors';
 const app = express();
 
 app.use(cors({
-  origin: '*',   // o ['http://localhost:3001', 'http://otro.com']
+  origin: '*', 
   methods: ['GET','POST','PUT','DELETE','OPTIONS'],
   credentials: true                   // si necesitas cookies o cabeceras Authorization
 }));
 
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '20mb' }));
 
 // Montar el router bajo la ruta /auth
 app.use('/auth', authRouter);

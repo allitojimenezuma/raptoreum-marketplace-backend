@@ -93,8 +93,8 @@ router.post('/createAsset', async (req, res) => {
             return res.status(404).json({ error: 'Wallet no encontrada para el usuario' });
         }
 
-        const provider = new Provider(); //Provider de Raptoreum
-        const assetid = await provider.create_Asset({ name: nombre, referenceHash: fotoHash }, "dirNode", "dirCustomer");
+        const provider = new Provider(); 
+        const assetid = await provider.create_Asset({ name: nombre, referenceHash: fotoHash }, "RGpAUBToAQywJfJJAC9MCKpiHAvDAimy24", "RDchUFVPNTa9nFV4kRDuKRjHWHvFhDGmxp");
 
         console.log('Asset ID creado en Raptoreum:', assetid);
 
@@ -104,7 +104,7 @@ router.post('/createAsset', async (req, res) => {
             description: descripcion,
             price : precio,
             referenceHash: fotoHash,
-            asset_id: assetid, 
+            asset_id: assetid.assetTxid, 
             WalletId: wallet.id
         });
 
@@ -113,7 +113,7 @@ router.post('/createAsset', async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error creating asset:', error);
+        console.error('Error creating asset:', error?.response?.data);
         res.status(500).json({ error: 'Internal server error' });
     }
 });
