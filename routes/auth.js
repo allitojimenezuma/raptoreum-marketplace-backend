@@ -91,7 +91,7 @@ router.get('/verify', async (req, res) => {
   await Wallet.create({
     direccion: walletData.pubKey, // Cambiado de pubKey a direccion
     wif: encrypt(walletData.wif),
-    usuarioId: usuario.id
+    UsuarioId: usuario.id
   });
 
   delete pendingUsers[token];
