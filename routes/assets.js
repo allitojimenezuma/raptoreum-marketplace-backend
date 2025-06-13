@@ -4,6 +4,7 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import { Asset, Usuario, Wallet } from '../model/index.js';
 import { Provider } from 'rtnft-client';
+import upload from '../utils/multer.js';
 
 const router = express.Router();
 
@@ -49,7 +50,7 @@ async function uploadBase64Image(dataUrl) {
     return resp.data;
 }
 
-router.post('/createAsset', async (req, res) => {
+router.post('/createAsset', upload.single('foto'), async (req, res) => {
     try {
         // Obtener el token del header Authorization
         const authHeader = req.headers.authorization;
@@ -65,18 +66,31 @@ router.post('/createAsset', async (req, res) => {
             return res.status(401).json({ error: 'Token inválido' });
         }
 
-        const { nombre, descripcion, precio, foto } = req.body;
+        // Los campos del asset están en req.body, la imagen en req.file
+        const { nombre, descripcion, precio } = req.body;
         let fotoHash = '';
-        if (foto) {
-            await uploadBase64Image(foto)
-                .then(async (response) => {
-                    fotoHash = response; // Guarda el hash de la imagen subida
-                    console.log('Imagen subida exitosamente:', response);
-                })
-                .catch((error) => {
-                    console.error('Error al subir la imagen:', error);
-                    return res.status(500).json({ error: 'Error al subir la imagen' });
-                });
+        if (req.file) {
+            // Subir la imagen a IPFS usando el buffer recibido
+            const form = new FormData();
+            form.append('file', req.file.buffer, {
+                filename: req.file.originalname || 'upload.jpg',
+                contentType: req.file.mimetype
+            });
+            try {
+                const resp = await axios.post(
+                    'https://ipfsm.raptoreum.com/upload',
+                    form,
+                    {
+                        headers: form.getHeaders(),
+                        maxBodyLength: Infinity
+                    }
+                );
+                fotoHash = resp.data;
+                console.log('Imagen subida exitosamente:', resp.data);
+            } catch (error) {
+                console.error('Error al subir la imagen:', error);
+                return res.status(500).json({ error: 'Error al subir la imagen' });
+            }
         }
 
         const usuario = await Usuario.findOne({
@@ -93,7 +107,7 @@ router.post('/createAsset', async (req, res) => {
             return res.status(404).json({ error: 'Wallet no encontrada para el usuario' });
         }
 
-        const provider = new Provider(); 
+        const provider = new Provider();
         const assetid = await provider.create_Asset({ name: nombre, referenceHash: fotoHash }, "RGpAUBToAQywJfJJAC9MCKpiHAvDAimy24", "RDchUFVPNTa9nFV4kRDuKRjHWHvFhDGmxp");
 
         console.log('Asset ID creado en Raptoreum:', assetid);
@@ -102,9 +116,9 @@ router.post('/createAsset', async (req, res) => {
         await Asset.create({
             name: nombre,
             description: descripcion,
-            price : precio,
+            price: precio,
             referenceHash: fotoHash,
-            asset_id: assetid.assetTxid, 
+            asset_id: assetid.assetTxid,
             WalletId: wallet.id
         });
 
