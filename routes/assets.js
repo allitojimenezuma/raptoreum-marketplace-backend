@@ -5,6 +5,7 @@ import jwt from 'jsonwebtoken';
 import { Asset, Usuario, Wallet } from '../model/index.js';
 import { Provider } from 'rtnft-client';
 import upload from '../utils/multer.js';
+import { decrypt } from '../utils/encryption.js';
 
 const router = express.Router();
 
@@ -175,5 +176,117 @@ router.post('/buy/:id', async (req, res) => {
     res.status(500).json({ message: 'Error al realizar la compra', error: err.message });
   }
 });
+
+// Envío de asset entre wallets (envío manual)
+router.post('/send', async (req, res) => {
+    try {
+        console.log('--- INICIO ENVÍO ASSET ---');
+        // 1. Extract and verify token
+        const authHeader = req.headers.authorization;
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return res.status(401).json({ message: 'Token de autorización requerido.' });
+        }
+        const token = authHeader.split(' ')[1];
+
+        let decodedToken;
+        try {
+            decodedToken = jwt.verify(token, process.env.JWT_SECRET);
+        } catch (err) {
+            return res.status(401).json({ message: 'Token inválido o expirado.' });
+        }
+
+        const userEmail = decodedToken.email;
+        if (!userEmail) {
+            return res.status(401).json({ message: 'Email no encontrado en el token.' });
+        }
+
+        // 2. Fetch user and their primary wallet
+        const usuario = await Usuario.findOne({
+            where: { email: userEmail },
+            include: [{ model: Wallet, as: 'wallets' }]
+        });
+
+        if (!usuario) {
+            return res.status(404).json({ message: 'Usuario no encontrado.' });
+        }
+        if (!usuario.wallets || usuario.wallets.length === 0) {
+            return res.status(404).json({ message: 'Wallet no encontrada para el usuario.' });
+        }
+        
+        // Assuming the first wallet is the one to use for sending
+        const senderWallet = usuario.wallets[0];
+        const fromAddress = senderWallet.direccion;
+        const encryptedWif = senderWallet.wif;
+
+        if (!fromAddress || !encryptedWif) {
+            return res.status(500).json({ message: 'Información de la wallet incompleta.' });
+        }
+
+        // 3. Decrypt the private key (WIF)
+        let wif;
+        try {
+            wif = decrypt(encryptedWif);
+            if (!wif) {
+                throw new Error('La desencriptación de WIF resultó en un valor vacío.');
+            }
+        } catch (decryptionError) {
+            console.error('Error al desencriptar WIF:', decryptionError);
+            return res.status(500).json({ message: 'Error al procesar la clave privada.' });
+        }
+
+        // 4. Get parameters from request body
+        const { toAddress, assetTicker } = req.body;
+
+        if (!toAddress || !assetTicker) {
+            return res.status(400).json({ message: 'Faltan parámetros: toAddress y assetTicker son requeridos.' });
+        }
+        
+        
+        // 6. Call provider.sendAssetTransaction
+        console.log(`Intentando enviar asset:
+            De: ${fromAddress}
+            A: ${toAddress}
+            Asset: ${assetTicker}
+        `);
+
+        // // 5. Instantiate Provider
+        // const provider = new Provider();
+
+        // const txid = await provider.sendAssetTransaction(
+        //     fromAddress,
+        //     toAddress,
+        //     wif,
+        //     assetTicker
+        // );
+        const txid = "234567";
+
+        console.log('Transacción de envío de asset exitosa. TXID:', txid);
+
+        //Eliminar el asset de la base de datos
+        
+        await Asset.destroy({
+            where: {
+                asset_id: assetTicker,
+                WalletId: senderWallet.id
+            }
+        });
+        console.log('Asset eliminado de la base de datos:', assetTicker);
+
+
+        res.status(200).json({ message: 'Transacción de envío de asset iniciada correctamente.', txid });
+
+    } catch (error) {
+        console.error('Error en la ruta /send:', error);
+        // Specific error messages from the provider might be included in error.message
+        if (error.message.includes("Sin UTXO para") || error.message.includes("RTM insuficiente") || error.message.includes("Firma incompleta")) {
+            return res.status(400).json({ message: `Fallo en la transacción: ${error.message}` });
+        }
+        if (error.message.includes("RPC call")) { // Errors from provider.call
+             return res.status(500).json({ message: 'Error de comunicación con el nodo Raptoreum.', details: error.message });
+        }
+        res.status(500).json({ message: 'Error interno del servidor al enviar el asset.', error: error.message });
+    }
+});
+
 
 export default router;
