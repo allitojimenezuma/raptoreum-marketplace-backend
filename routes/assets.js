@@ -591,8 +591,10 @@ router.post('/importAsset', async (req, res) => {
             return res.status(403).json({ message: 'El asset no está en la wallet del usuario.' });
         }
 
-        const referenceHash = await provider.getassetdetailsbyname(assetName).ReferenceHash;
-        console.log("Valor:" , referenceHash);
+        const assetDetails = await provider.getassetdetailsbyname(assetName);
+        const referenceHash = assetDetails.ReferenceHash;
+        console.log(`Detalles del asset importado: ${JSON.stringify(assetDetails)}`);
+        console.log(`Valor: ${referenceHash}`);
 
 
         // 5. Registrar el asset en la base de datos si no existe
