@@ -3,9 +3,13 @@ import FormData from 'form-data';
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import { Asset, Usuario, Wallet } from '../model/index.js';
-import { Provider } from 'rtnft-client';
+import { Provider } from 'raptoreum.js';
 import upload from '../utils/multer.js';
 import { decrypt } from '../utils/encryption.js';
+import dotenv from 'dotenv';
+dotenv.config();
+
+
 
 const router = express.Router();
 
@@ -104,7 +108,12 @@ router.post('/createAsset', upload.single('foto'), async (req, res) => {
             return res.status(404).json({ error: 'Wallet no encontrada para el usuario' });
         }
 
-        const provider = new Provider();
+        const provider = new Provider(
+      process.env.RPC_USER,
+      process.env.RPC_PASSWORD,
+      process.env.RPC_PORT,
+      process.env.RPC_HOST
+    );
         const nodeWalletAddress = "RGpAUBToAQywJfJJAC9MCKpiHAvDAimy24"; // Central wallet for asset operations
         const customerAddress = wallet.direccion;
 
@@ -196,7 +205,12 @@ router.post('/createAsset', upload.single('foto'), async (req, res) => {
 
 // Traspaso de asset entre wallets (compra)
 router.post('/buy/:id', async (req, res) => {
-    const provider = new Provider(); // Instantiate provider early
+    const provider = new Provider(
+      process.env.RPC_USER,
+      process.env.RPC_PASSWORD,
+      process.env.RPC_PORT,
+      process.env.RPC_HOST
+    ); // Instantiate provider early
 
     try {
         console.log('--- INICIO COMPRA ASSET ---');
@@ -421,7 +435,12 @@ router.post('/send', async (req, res) => {
         `);
 
         // 5. Instantiate Provider
-        const provider = new Provider();
+        const provider = new Provider(
+      process.env.RPC_USER,
+      process.env.RPC_PASSWORD,
+      process.env.RPC_PORT,
+      process.env.RPC_HOST
+    );
 
         const txid = await provider.sendAssetTransaction(
             fromAddress,
@@ -507,7 +526,12 @@ router.post('/asset-balance', async (req, res) => {
         }
 
         // 4. Instantiate Provider
-        const provider = new Provider();
+        const provider = new Provider(
+      process.env.RPC_USER,
+      process.env.RPC_PASSWORD,
+      process.env.RPC_PORT,
+      process.env.RPC_HOST
+    );
 
         // 5. Get list of addresses and amounts for the asset
         console.log(`Consultando balance del asset '${assetName}' para la dirección: ${userAddress}`);
@@ -582,7 +606,12 @@ router.post('/importAsset', async (req, res) => {
         }
 
         // 4. Verificar que el asset esté en la wallet del usuario usando el Provider
-        const provider = new Provider();
+        const provider = new Provider(
+      process.env.RPC_USER,
+      process.env.RPC_PASSWORD,
+      process.env.RPC_PORT,
+      process.env.RPC_HOST
+    );
         const addressesWithAsset = await provider.listaddressesbyasset(assetName);
         if (!addressesWithAsset || !addressesWithAsset[userAddress] || addressesWithAsset[userAddress] <= 0) {
             return res.status(403).json({ message: 'El asset no está en la wallet del usuario.' });

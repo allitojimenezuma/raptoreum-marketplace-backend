@@ -3,12 +3,13 @@ import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { Usuario, Wallet } from '../model/index.js';
 // import createWallet from '../utils/createWallet.js'; 
-import { Wallet as RTWallet } from '../../rptClient_NPM/wallet.js';
-import dotenv from 'dotenv';
+import { Wallet as RTWallet } from 'raptoreum.js';
 import { encrypt } from '../utils/encryption.js';
 import crypto from 'crypto';
 import nodemailer from 'nodemailer';
+import dotenv from 'dotenv';
 dotenv.config();
+
 
 const router = express.Router();
 
