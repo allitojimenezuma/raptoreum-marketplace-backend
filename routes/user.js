@@ -3,6 +3,7 @@ import { Asset, Usuario, Wallet } from '../model/index.js';
 import jwt from 'jsonwebtoken';
 import nodemailer from 'nodemailer';
 import crypto from 'crypto';
+import { Provider } from 'rtnft-client';
 import bcrypt from 'bcrypt';
 
 const router = express.Router();
@@ -228,6 +229,76 @@ router.post('/reset-password', async (req, res) => {
     res.status(500).json({ error: 'Ocurrió un error interno al restablecer tu contraseña.' });
   }
 });
+
+// Obtener el balance de la wallet del usuario autenticado
+router.get('/balance', async (req, res) => {
+    try {
+        console.log('--- INICIO OBTENER BALANCE ---');
+        // 1. Extract and verify token
+        const authHeader = req.headers.authorization;
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return res.status(401).json({ message: 'Token de autorización requerido.' });
+        }
+        const token = authHeader.split(' ')[1];
+
+        let decodedToken;
+        try {
+            decodedToken = jwt.verify(token, process.env.JWT_SECRET);
+        } catch (err) {
+            return res.status(401).json({ message: 'Token inválido o expirado.' });
+        }
+
+        const userEmail = decodedToken.email;
+        if (!userEmail) {
+            return res.status(401).json({ message: 'Email no encontrado en el token.' });
+        }
+
+        // 2. Fetch user and their primary wallet
+        const usuario = await Usuario.findOne({
+            where: { email: userEmail },
+            include: [{ model: Wallet, as: 'wallets' }]
+        });
+
+        if (!usuario) {
+            return res.status(404).json({ message: 'Usuario no encontrado.' });
+        }
+        if (!usuario.wallets || usuario.wallets.length === 0) {
+            return res.status(404).json({ message: 'Wallet no encontrada para el usuario.' });
+        }
+        
+        // Assuming the first wallet is the one to use
+        const userWallet = usuario.wallets[0];
+        const userAddress = userWallet.direccion;
+
+        if (!userAddress) {
+            return res.status(500).json({ message: 'Dirección de la wallet no encontrada.' });
+        }
+
+        // 3. Instantiate Provider
+        const provider = new Provider();
+
+        // 4. Get balance
+        console.log(`Consultando balance para la dirección: ${userAddress}`);
+        const balanceSatoshis = await provider.getBalance(userAddress);
+        const balanceRTM = balanceSatoshis / 1e8; // Convert satoshis to RTM
+
+        console.log(`Balance obtenido: ${balanceSatoshis} satoshis (${balanceRTM} RTM)`);
+        res.status(200).json({ 
+            message: 'Balance obtenido correctamente.', 
+            address: userAddress,
+            balanceSatoshis: balanceSatoshis,
+            balanceRTM: balanceRTM 
+        });
+
+    } catch (error) {
+        console.error('Error en la ruta /balance:', error);
+        if (error.message.includes("RPC call")) { // Errors from provider.call
+             return res.status(500).json({ message: 'Error de comunicación con el nodo Raptoreum al obtener el balance.', details: error.message });
+        }
+        res.status(500).json({ message: 'Error interno del servidor al obtener el balance.', error: error.message });
+    }
+});
+
 
 
 export default router;
