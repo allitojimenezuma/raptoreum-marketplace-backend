@@ -431,6 +431,76 @@ router.post('/asset-balance', async (req, res) => {
     }
 });
 
+// Importar un Asset externo a la plataforma
+router.post('/importAsset', async (req, res) => {
+    try {
+        // 1. Verificar token y obtener email del usuario
+        const authHeader = req.headers.authorization;
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return res.status(401).json({ message: 'Token de autorización requerido.' });
+        }
+        const token = authHeader.split(' ')[1];
+        let decodedToken;
+        try {
+            decodedToken = jwt.verify(token, process.env.JWT_SECRET);
+        } catch (err) {
+            return res.status(401).json({ message: 'Token inválido o expirado.' });
+        }
+        const userEmail = decodedToken.email;
+        if (!userEmail) {
+            return res.status(401).json({ message: 'Email no encontrado en el token.' });
+        }
+
+        // 2. Obtener datos del asset externo
+        const { assetName, description, price, referenceHash } = req.body;
+        if (!assetName) {
+            return res.status(400).json({ message: 'El parámetro assetName es requerido.' });
+        }
+
+        // 3. Buscar usuario y su wallet
+        const usuario = await Usuario.findOne({
+            where: { email: userEmail },
+            include: [{ model: Wallet, as: 'wallets' }]
+        });
+        if (!usuario) {
+            return res.status(404).json({ message: 'Usuario no encontrado.' });
+        }
+        if (!usuario.wallets || usuario.wallets.length === 0) {
+            return res.status(404).json({ message: 'Wallet no encontrada para el usuario.' });
+        }
+        const userWallet = usuario.wallets[0];
+        const userAddress = userWallet.direccion;
+        if (!userAddress) {
+            return res.status(500).json({ message: 'Dirección de la wallet no encontrada.' });
+        }
+
+        // 4. Verificar que el asset esté en la wallet del usuario usando el Provider
+        const provider = new Provider();
+        const addressesWithAsset = await provider.listaddressesbyasset(assetName);
+        if (!addressesWithAsset || !addressesWithAsset[userAddress] || addressesWithAsset[userAddress] <= 0) {
+            return res.status(403).json({ message: 'El asset no está en la wallet del usuario.' });
+        }
+
+        // 5. Registrar el asset en la base de datos si no existe
+        const existingAsset = await Asset.findOne({ where: { asset_id: assetName, WalletId: userWallet.id } });
+        if (existingAsset) {
+            return res.status(409).json({ message: 'El asset ya está registrado en la plataforma para este usuario.' });
+        }
+        await Asset.create({
+            name: assetName,
+            description: description || '',
+            price: price || 0,
+            referenceHash: referenceHash || '',
+            asset_id: assetName,
+            WalletId: userWallet.id
+        });
+
+        res.status(200).json({ message: 'Asset importado correctamente a la plataforma.' });
+    } catch (error) {
+        console.error('Error en la importación de asset:', error);
+        res.status(500).json({ message: 'Error interno al importar el asset.', error: error.message });
+    }
+});
 
 
 
