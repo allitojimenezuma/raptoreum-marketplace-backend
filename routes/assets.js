@@ -109,7 +109,7 @@ router.post('/createAsset', upload.single('foto'), async (req, res) => {
         }
 
         const provider = new Provider();
-        const assetid = await provider.create_Asset({ name: nombre, referenceHash: fotoHash }, "RGpAUBToAQywJfJJAC9MCKpiHAvDAimy24", "RDchUFVPNTa9nFV4kRDuKRjHWHvFhDGmxp");
+        const assetid = await provider.create_Asset({ name: nombre, referenceHash: fotoHash }, "RGpAUBToAQywJfJJAC9MCKpiHAvDAimy24", wallet.direccion);
 
         console.log('Asset ID creado en Raptoreum:', assetid);
 
