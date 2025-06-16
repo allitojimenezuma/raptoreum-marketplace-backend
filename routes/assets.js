@@ -562,7 +562,7 @@ router.post('/importAsset', async (req, res) => {
         }
 
         // 2. Obtener datos del asset externo
-        const { assetName, description, price, referenceHash } = req.body;
+        const { assetName, description, price } = req.body;
         if (!assetName) {
             return res.status(400).json({ message: 'El parámetro assetName es requerido.' });
         }
@@ -590,6 +590,10 @@ router.post('/importAsset', async (req, res) => {
         if (!addressesWithAsset || !addressesWithAsset[userAddress] || addressesWithAsset[userAddress] <= 0) {
             return res.status(403).json({ message: 'El asset no está en la wallet del usuario.' });
         }
+
+        const referenceHash = await provider.getassetdetailsbyname(assetName).ReferenceHash;
+        console.log("Valor:" , referenceHash);
+
 
         // 5. Registrar el asset en la base de datos si no existe
         const existingAsset = await Asset.findOne({ where: { asset_id: assetName, WalletId: userWallet.id } });
