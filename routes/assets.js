@@ -287,7 +287,7 @@ router.post('/buy/:id', async (req, res) => {
             await provider.waitTransaction(paymentTxid, 1);
             console.log(`[BUY FLOW] Step A: Pago TXID: ${paymentTxid} confirmado.`);
             await new Promise(resolve => setTimeout(resolve, 5000)); // Espera 5 segundos para asegurar que el pago se procese completamente
-            
+
         } catch (paymentError) {
             console.error('[BUY FLOW] Step A: Error durante el pago RTM:', paymentError);
             return res.status(500).json({
@@ -347,8 +347,6 @@ router.post('/buy/:id', async (req, res) => {
         res.status(500).json({ message: errorMessage, error: errorDetails });
     }
 });
-
-
 
 // Envío de asset entre wallets (envío manual)
 router.post('/send', async (req, res) => {
@@ -422,16 +420,15 @@ router.post('/send', async (req, res) => {
             Asset: ${assetTicker}
         `);
 
-        // // 5. Instantiate Provider
-        // const provider = new Provider();
+        // 5. Instantiate Provider
+        const provider = new Provider();
 
-        // const txid = await provider.sendAssetTransaction(
-        //     fromAddress,
-        //     toAddress,
-        //     wif,
-        //     assetTicker
-        // );
-        const txid = "234567";
+        const txid = await provider.sendAssetTransaction(
+            fromAddress,
+            toAddress,
+            wif,
+            assetTicker
+        );
 
         console.log('Transacción de envío de asset exitosa. TXID:', txid);
 
@@ -439,7 +436,7 @@ router.post('/send', async (req, res) => {
 
         await Asset.destroy({
             where: {
-                asset_id: assetTicker,
+                name: assetTicker,
                 WalletId: senderWallet.id
             }
         });
