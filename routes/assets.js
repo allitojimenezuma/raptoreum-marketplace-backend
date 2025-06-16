@@ -135,46 +135,46 @@ router.post('/createAsset', upload.single('foto'), async (req, res) => {
 
 // Traspaso de asset entre wallets (compra)
 router.post('/buy/:id', async (req, res) => {
-  try {
-    console.log('--- INICIO COMPRA ASSET ---');
-    const assetId = req.params.id;
-    const token = req.headers.authorization?.replace('Bearer ', '');
-    console.log('assetId:', assetId);
-    console.log('token:', token);
-    if (!token) return res.status(401).json({ message: 'Token requerido' });
-    const decoded = jwt.decode(token);
-    console.log('decoded:', decoded);
-    if (!decoded?.email) return res.status(401).json({ message: 'Token inválido' });
+    try {
+        console.log('--- INICIO COMPRA ASSET ---');
+        const assetId = req.params.id;
+        const token = req.headers.authorization?.replace('Bearer ', '');
+        console.log('assetId:', assetId);
+        console.log('token:', token);
+        if (!token) return res.status(401).json({ message: 'Token requerido' });
+        const decoded = jwt.decode(token);
+        console.log('decoded:', decoded);
+        if (!decoded?.email) return res.status(401).json({ message: 'Token inválido' });
 
-    // Asset y wallet origen
-    const asset = await Asset.findOne({ where: { id: assetId }, include: Wallet });
-    console.log('asset:', asset?.toJSON?.() || asset);
-    if (!asset) return res.status(404).json({ message: 'Asset no encontrado' });
-    const walletOrigen = await Wallet.findOne({ where: { id: asset.WalletId } });
-    console.log('walletOrigen:', walletOrigen?.toJSON?.() || walletOrigen);
-    if (!walletOrigen) return res.status(404).json({ message: 'Wallet origen no encontrada' });
+        // Asset y wallet origen
+        const asset = await Asset.findOne({ where: { id: assetId }, include: Wallet });
+        console.log('asset:', asset?.toJSON?.() || asset);
+        if (!asset) return res.status(404).json({ message: 'Asset no encontrado' });
+        const walletOrigen = await Wallet.findOne({ where: { id: asset.WalletId } });
+        console.log('walletOrigen:', walletOrigen?.toJSON?.() || walletOrigen);
+        if (!walletOrigen) return res.status(404).json({ message: 'Wallet origen no encontrada' });
 
-    // Wallet destino (usuario comprador)
-    const usuarioDestino = await Usuario.findOne({ where: { email: decoded.email }, include: { model: Wallet, as: 'wallets' } });
-    console.log('usuarioDestino:', usuarioDestino?.toJSON?.() || usuarioDestino);
-    if (!usuarioDestino || !usuarioDestino.wallets?.length) return res.status(404).json({ message: 'Wallet destino no encontrada' });
-    const walletDestino = usuarioDestino.wallets[0];
-    console.log('walletDestino:', walletDestino?.toJSON?.() || walletDestino);
+        // Wallet destino (usuario comprador)
+        const usuarioDestino = await Usuario.findOne({ where: { email: decoded.email }, include: { model: Wallet, as: 'wallets' } });
+        console.log('usuarioDestino:', usuarioDestino?.toJSON?.() || usuarioDestino);
+        if (!usuarioDestino || !usuarioDestino.wallets?.length) return res.status(404).json({ message: 'Wallet destino no encontrada' });
+        const walletDestino = usuarioDestino.wallets[0];
+        console.log('walletDestino:', walletDestino?.toJSON?.() || walletDestino);
 
-    // Desencriptar WIF origen
-    const { decrypt } = await import('../utils/encryption.js');
-    const wifOrigen = decrypt(walletOrigen.wif);
-    console.log('wifOrigen:', wifOrigen);
+        // Desencriptar WIF origen
+        const { decrypt } = await import('../utils/encryption.js');
+        const wifOrigen = decrypt(walletOrigen.wif);
+        console.log('wifOrigen:', wifOrigen);
 
-    // 2. Traspaso lógico: solo cambiar el WalletId en la base de datos
-    await asset.update({ WalletId: walletDestino.id });
-    console.log('Asset actualizado en BD con nuevo WalletId:', walletDestino.id);
+        // 2. Traspaso lógico: solo cambiar el WalletId en la base de datos
+        await asset.update({ WalletId: walletDestino.id });
+        console.log('Asset actualizado en BD con nuevo WalletId:', walletDestino.id);
 
-    res.json({ message: 'Compra realizada y asset transferido (solo en base de datos)' });
-  } catch (err) {
-    console.error('Error en la compra de asset:', err);
-    res.status(500).json({ message: 'Error al realizar la compra', error: err.message });
-  }
+        res.json({ message: 'Compra realizada y asset transferido (solo en base de datos)' });
+    } catch (err) {
+        console.error('Error en la compra de asset:', err);
+        res.status(500).json({ message: 'Error al realizar la compra', error: err.message });
+    }
 });
 
 // Envío de asset entre wallets (envío manual)
@@ -212,7 +212,7 @@ router.post('/send', async (req, res) => {
         if (!usuario.wallets || usuario.wallets.length === 0) {
             return res.status(404).json({ message: 'Wallet no encontrada para el usuario.' });
         }
-        
+
         // Assuming the first wallet is the one to use for sending
         const senderWallet = usuario.wallets[0];
         const fromAddress = senderWallet.direccion;
@@ -240,8 +240,8 @@ router.post('/send', async (req, res) => {
         if (!toAddress || !assetTicker) {
             return res.status(400).json({ message: 'Faltan parámetros: toAddress y assetTicker son requeridos.' });
         }
-        
-        
+
+
         // 6. Call provider.sendAssetTransaction
         console.log(`Intentando enviar asset:
             De: ${fromAddress}
@@ -263,7 +263,7 @@ router.post('/send', async (req, res) => {
         console.log('Transacción de envío de asset exitosa. TXID:', txid);
 
         //Eliminar el asset de la base de datos
-        
+
         await Asset.destroy({
             where: {
                 asset_id: assetTicker,
@@ -282,11 +282,95 @@ router.post('/send', async (req, res) => {
             return res.status(400).json({ message: `Fallo en la transacción: ${error.message}` });
         }
         if (error.message.includes("RPC call")) { // Errors from provider.call
-             return res.status(500).json({ message: 'Error de comunicación con el nodo Raptoreum.', details: error.message });
+            return res.status(500).json({ message: 'Error de comunicación con el nodo Raptoreum.', details: error.message });
         }
         res.status(500).json({ message: 'Error interno del servidor al enviar el asset.', error: error.message });
     }
 });
+
+router.post('/asset-balance', async (req, res) => {
+    try {
+        console.log('--- INICIO OBTENER BALANCE DE ASSET ---');
+        // 1. Extract and verify token
+        const authHeader = req.headers.authorization;
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return res.status(401).json({ message: 'Token de autorización requerido.' });
+        }
+        const token = authHeader.split(' ')[1];
+
+        let decodedToken;
+        try {
+            decodedToken = jwt.verify(token, process.env.JWT_SECRET);
+        } catch (err) {
+            return res.status(401).json({ message: 'Token inválido o expirado.' });
+        }
+
+        const userEmail = decodedToken.email;
+        if (!userEmail) {
+            return res.status(401).json({ message: 'Email no encontrado en el token.' });
+        }
+
+        // 2. Get assetName from request body
+        const { assetName } = req.body;
+        if (!assetName) {
+            return res.status(400).json({ message: 'El parámetro assetName es requerido.' });
+        }
+
+        // 3. Fetch user and their primary wallet
+        const usuario = await Usuario.findOne({
+            where: { email: userEmail },
+            include: [{ model: Wallet, as: 'wallets' }]
+        });
+
+        if (!usuario) {
+            return res.status(404).json({ message: 'Usuario no encontrado.' });
+        }
+        if (!usuario.wallets || usuario.wallets.length === 0) {
+            return res.status(404).json({ message: 'Wallet no encontrada para el usuario.' });
+        }
+
+        const userWallet = usuario.wallets[0];
+        const userAddress = userWallet.direccion;
+
+        if (!userAddress) {
+            return res.status(500).json({ message: 'Dirección de la wallet no encontrada.' });
+        }
+
+        // 4. Instantiate Provider
+        const provider = new Provider();
+
+        // 5. Get list of addresses and amounts for the asset
+        console.log(`Consultando balance del asset '${assetName}' para la dirección: ${userAddress}`);
+        const addressesWithAsset = await provider.listaddressesbyasset(assetName);
+
+        let assetBalance = 0;
+        if (addressesWithAsset && typeof addressesWithAsset === 'object' && addressesWithAsset[userAddress]) {
+            assetBalance = addressesWithAsset[userAddress];
+        }
+
+        console.log(`Balance del asset '${assetName}' para ${userAddress}: ${assetBalance}`);
+        res.status(200).json({
+            message: 'Balance de asset obtenido correctamente.',
+            address: userAddress,
+            assetName: assetName,
+            balance: assetBalance
+        });
+    } catch (error) {
+        console.error(`Error en la ruta /asset-balance para ${req.body?.assetName}:`, error);
+        if (error.message.includes("RPC call")) {
+            return res.status(500).json({ message: `Error de comunicación con el nodo Raptoreum al obtener el balance del asset.`, details: error.message });
+        }
+        // Specific error if asset not found by the node
+        if (error.message.toLowerCase().includes("asset not found") || error.message.toLowerCase().includes("unknown asset")) {
+            return res.status(404).json({ message: `Asset '${req.body?.assetName}' no encontrado en la red.`, details: error.message });
+        }
+        res.status(500).json({ message: 'Error interno del servidor al obtener el balance del asset.', error: error.message });
+    }
+});
+
+
+
+
 
 
 export default router;
