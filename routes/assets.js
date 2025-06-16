@@ -196,49 +196,159 @@ router.post('/createAsset', upload.single('foto'), async (req, res) => {
 
 // Traspaso de asset entre wallets (compra)
 router.post('/buy/:id', async (req, res) => {
+    const provider = new Provider(); // Instantiate provider early
+
     try {
         console.log('--- INICIO COMPRA ASSET ---');
-        const assetId = req.params.id;
+        const assetDbId = req.params.id; // This is the database ID of the asset
         const token = req.headers.authorization?.replace('Bearer ', '');
-        console.log('assetId:', assetId);
-        console.log('token:', token);
+
+        console.log('Asset DB ID:', assetDbId);
         if (!token) return res.status(401).json({ message: 'Token requerido' });
-        const decoded = jwt.decode(token);
-        console.log('decoded:', decoded);
-        if (!decoded?.email) return res.status(401).json({ message: 'Token inválido' });
 
-        // Asset y wallet origen
-        const asset = await Asset.findOne({ where: { id: assetId }, include: Wallet });
-        console.log('asset:', asset?.toJSON?.() || asset);
-        if (!asset) return res.status(404).json({ message: 'Asset no encontrado' });
-        const walletOrigen = await Wallet.findOne({ where: { id: asset.WalletId } });
-        console.log('walletOrigen:', walletOrigen?.toJSON?.() || walletOrigen);
-        if (!walletOrigen) return res.status(404).json({ message: 'Wallet origen no encontrada' });
+        const decodedBuyer = jwt.decode(token);
+        if (!decodedBuyer?.email) return res.status(401).json({ message: 'Token inválido o email no encontrado en token' });
+        const buyerEmail = decodedBuyer.email;
+        console.log('Buyer Email:', buyerEmail);
 
-        // Wallet destino (usuario comprador)
-        const usuarioDestino = await Usuario.findOne({ where: { email: decoded.email }, include: { model: Wallet, as: 'wallets' } });
-        console.log('usuarioDestino:', usuarioDestino?.toJSON?.() || usuarioDestino);
-        if (!usuarioDestino || !usuarioDestino.wallets?.length) return res.status(404).json({ message: 'Wallet destino no encontrada' });
-        const walletDestino = usuarioDestino.wallets[0];
-        console.log('walletDestino:', walletDestino?.toJSON?.() || walletDestino);
+        // 1. Fetch Asset, Seller's Wallet, and Seller's User
+        const assetToBuy = await Asset.findOne({
+            where: { id: assetDbId },
+            include: [{
+                model: Wallet,
+                as: 'Wallet', // Make sure 'as: wallet' matches your Asset model association
+                include: [{ model: Usuario, as: 'Usuario' }] // Include seller's user info if needed
+            }]
+        });
 
-        // Desencriptar WIF origen
-        const { decrypt } = await import('../utils/encryption.js');
-        const wifOrigen = decrypt(walletOrigen.wif);
-        console.log('wifOrigen:', wifOrigen);
+        if (!assetToBuy) {
+            console.error('Asset no encontrado en la base de datos:', assetDbId);
+            return res.status(404).json({ message: 'Asset no encontrado en la base de datos' });
+        }
+        if (!assetToBuy.Wallet){
+            console.error('Wallet del vendedor no encontrada para este asset:', assetToBuy);
+            return res.status(404).json({ message: 'Wallet del vendedor no encontrada para este asset' });
+        } 
 
-        
+        const sellerWallet = assetToBuy.Wallet;
+        const sellerAddress = sellerWallet.direccion;
+        const sellerEncryptedWif = sellerWallet.wif;
+        const assetBlockchainId = assetToBuy.name;
+        const assetPriceRTM = parseFloat(assetToBuy.price);
 
-        // 2. Traspaso lógico: solo cambiar el WalletId en la base de datos
-        await asset.update({ WalletId: walletDestino.id });
-        console.log('Asset actualizado en BD con nuevo WalletId:', walletDestino.id);
+        if (isNaN(assetPriceRTM) || assetPriceRTM <= 0) {
+            return res.status(400).json({ message: 'Precio del asset inválido.' });
+        }
+        const assetPriceSatoshis = Math.round(assetPriceRTM * 1e8);
 
-        res.json({ message: 'Compra realizada y asset transferido (solo en base de datos)' });
+        console.log(`Asset a comprar: ${assetToBuy.name} (ID: ${assetBlockchainId}), Precio: ${assetPriceRTM} RTM (${assetPriceSatoshis} satoshis)`);
+        console.log(`Vendedor: ${sellerAddress}`);
+
+        // 2. Fetch Buyer's Wallet
+        const buyerUsuario = await Usuario.findOne({
+            where: { email: buyerEmail },
+            include: [{ model: Wallet, as: 'wallets' }]
+        });
+
+        if (!buyerUsuario || !buyerUsuario.wallets?.length) return res.status(404).json({ message: 'Wallet del comprador no encontrada' });
+        const buyerWallet = buyerUsuario.wallets[0]; // Assuming first wallet is primary
+        const buyerAddress = buyerWallet.direccion;
+        const buyerEncryptedWif = buyerWallet.wif;
+
+        console.log(`Comprador: ${buyerAddress}`);
+
+        if (sellerAddress === buyerAddress) {
+            return res.status(400).json({ message: 'El comprador y el vendedor no pueden ser la misma dirección.' });
+        }
+
+        // 3. Decrypt WIFs
+        const buyerWif = decrypt(buyerEncryptedWif);
+        const sellerWif = decrypt(sellerEncryptedWif);
+        if (!buyerWif || !sellerWif) {
+            console.error("Error desencriptando WIFs. Buyer WIF exists:", !!buyerWif, "Seller WIF exists:", !!sellerWif);
+            return res.status(500).json({ message: 'Error al procesar claves privadas.' });
+        }
+
+        // --- ON-CHAIN TRANSACTIONS ---
+
+        // Step A: Buyer pays RTM to Seller
+        console.log(`[BUY FLOW] Step A: Iniciando pago de ${assetPriceRTM} RTM (${assetPriceSatoshis} satoshis) de ${buyerAddress} a ${sellerAddress}`);
+        let paymentTxid;
+        try {
+            paymentTxid = await provider.sendRawTransaction(
+                buyerAddress,       // fromAddress
+                sellerAddress,      // toAddress
+                buyerWif,           // privateKeyWIF
+                assetPriceSatoshis  // amountToSend (in satoshis)
+                // fee is handled by default in sendRawTransaction
+            );
+            console.log(`[BUY FLOW] Step A: Transacción de pago enviada. TXID: ${paymentTxid}`);
+            console.log(`[BUY FLOW] Step A: Esperando confirmación del pago TXID: ${paymentTxid}...`);
+            await provider.waitTransaction(paymentTxid, 1);
+            console.log(`[BUY FLOW] Step A: Pago TXID: ${paymentTxid} confirmado.`);
+            await new Promise(resolve => setTimeout(resolve, 5000)); // Espera 5 segundos para asegurar que el pago se procese completamente
+            
+        } catch (paymentError) {
+            console.error('[BUY FLOW] Step A: Error durante el pago RTM:', paymentError);
+            return res.status(500).json({
+                message: 'Error durante la transacción de pago RTM.',
+                details: paymentError.message
+            });
+        }
+
+        // Step B: Seller transfers Asset (NFT) to Buyer
+        console.log(`[BUY FLOW] Step B: Iniciando transferencia del asset ${assetBlockchainId} de ${sellerAddress} a ${buyerAddress}`);
+        let assetTransferTxid;
+        try {
+            assetTransferTxid = await provider.sendAssetTransaction(
+                sellerAddress,      // fromAddress
+                buyerAddress,       // toAddress
+                sellerWif,          // wif
+                assetBlockchainId,  // assetTicker (asset's name/creationTxid)
+            );
+            console.log(`[BUY FLOW] Step B: Transacción de transferencia de asset enviada. TXID: ${assetTransferTxid}`);
+            console.log(`[BUY FLOW] Step B: Esperando confirmación de transferencia de asset TXID: ${assetTransferTxid}...`);
+            await provider.waitTransaction(assetTransferTxid, 1);
+            console.log(`[BUY FLOW] Step B: Transferencia de asset TXID: ${assetTransferTxid} confirmada.`);
+        } catch (assetTransferError) {
+            console.error('[BUY FLOW] Step B: Error durante la transferencia del asset:', assetTransferError);
+            // Potentially attempt to refund the buyer if asset transfer fails.
+            // This is complex and requires careful state management. For now, just error out.
+            return res.status(500).json({
+                message: 'Error durante la transferencia del asset después de un pago exitoso. Contacte a soporte.',
+                paymentTxid: paymentTxid,
+                details: assetTransferError.message
+            });
+        }
+
+        // --- DATABASE UPDATE ---
+        console.log(`[BUY FLOW] Actualizando propietario del asset en la base de datos a Wallet ID: ${buyerWallet.id}`);
+        await assetToBuy.update({ WalletId: buyerWallet.id });
+        console.log('[BUY FLOW] Asset actualizado en BD con nuevo WalletId:', buyerWallet.id);
+
+        res.json({
+            message: 'Compra realizada con éxito. Pago y transferencia de asset confirmados en la blockchain.',
+            paymentTxid: paymentTxid,
+            assetTransferTxid: assetTransferTxid,
+            assetName: assetToBuy.name,
+            newOwnerAddress: buyerAddress
+        });
     } catch (err) {
-        console.error('Error en la compra de asset:', err);
-        res.status(500).json({ message: 'Error al realizar la compra', error: err.message });
+        console.error('Error general en la compra de asset:', err);
+        let errorMessage = 'Error al realizar la compra';
+        let errorDetails = err.message;
+
+        if (err.message.includes("RPC call")) {
+            errorMessage = 'Error de comunicación con el nodo Raptoreum.';
+        } else if (err.message.includes("Sin UTXO para") || err.message.includes("RTM insuficiente") || err.message.includes("Firma incompleta")) {
+            errorMessage = `Fallo en la transacción: ${err.message}`;
+        }
+
+        res.status(500).json({ message: errorMessage, error: errorDetails });
     }
 });
+
+
 
 // Envío de asset entre wallets (envío manual)
 router.post('/send', async (req, res) => {
