@@ -721,6 +721,50 @@ router.put('/:assetDbId/toggle-listing', async (req, res) => {
     }
 });
 
+// Endpoint para actualizar el precio de un asset
+router.put('/updatePrice/:id', async (req, res) => {
+    try {
+        const authHeader = req.headers.authorization;
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return res.status(401).json({ message: 'Token de autorización requerido.' });
+        }
+        const token = authHeader.replace('Bearer ', '');
+        let decoded;
+        try {
+            decoded = jwt.verify(token, process.env.JWT_SECRET);
+        } catch (err) {
+            return res.status(401).json({ message: 'Token inválido.' });
+        }
+        const userEmail = decoded.email;
+        if (!userEmail) {
+            return res.status(401).json({ message: 'Email no encontrado en el token.' });
+        }
+        const assetId = req.params.id;
+        const { precio } = req.body;
+        if (precio === undefined || isNaN(Number(precio)) || Number(precio) < 0) {
+            return res.status(400).json({ message: 'Precio inválido.' });
+        }
+        // Buscar usuario y su wallet
+        const usuario = await Usuario.findOne({ where: { email: userEmail }, include: [{ model: Wallet, as: 'wallets' }] });
+        if (!usuario || !usuario.wallets || usuario.wallets.length === 0) {
+            return res.status(404).json({ message: 'Usuario o wallet no encontrado.' });
+        }
+        const userWalletIds = usuario.wallets.map(w => w.id);
+        // Buscar el asset y verificar que pertenece al usuario
+        const asset = await Asset.findOne({ where: { id: assetId, WalletId: userWalletIds } });
+        if (!asset) {
+            return res.status(404).json({ message: 'Asset no encontrado o no pertenece al usuario.' });
+        }
+        asset.price = precio;
+        asset.precio = precio;
+        await asset.save();
+        res.status(200).json({ message: 'Precio actualizado correctamente.', asset: { id: asset.id, price: asset.price } });
+    } catch (error) {
+        console.error('Error al actualizar el precio del asset:', error);
+        res.status(500).json({ message: 'Error interno al actualizar el precio.', error: error.message });
+    }
+});
+
 
 
 
