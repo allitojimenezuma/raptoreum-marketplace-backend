@@ -5,6 +5,8 @@ import authRouter from './routes/auth.js';
 import mainRouter from './routes/main.js';
 import userRouter from './routes/user.js';
 import assetRouter from './routes/assets.js';
+import offersRouter from './routes/offers.js';
+
 import cors from 'cors';
 
 const app = express();
@@ -22,6 +24,7 @@ app.use('/auth', authRouter);
 app.use('/user', userRouter);
 app.use('/', mainRouter);
 app.use('/assets', assetRouter);
+app.use('/offers', offersRouter);
 
 
 app.listen(3000, () => {
