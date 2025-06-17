@@ -479,7 +479,6 @@ router.post('/send', async (req, res) => {
 
 router.post('/asset-balance', async (req, res) => {
     try {
-        console.log('--- INICIO OBTENER BALANCE DE ASSET ---');
         // 1. Extract and verify token
         const authHeader = req.headers.authorization;
         if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -534,7 +533,6 @@ router.post('/asset-balance', async (req, res) => {
     );
 
         // 5. Get list of addresses and amounts for the asset
-        console.log(`Consultando balance del asset '${assetName}' para la dirección: ${userAddress}`);
         const addressesWithAsset = await provider.listaddressesbyasset(assetName);
 
         let assetBalance = 0;
@@ -542,7 +540,6 @@ router.post('/asset-balance', async (req, res) => {
             assetBalance = addressesWithAsset[userAddress];
         }
 
-        console.log(`Balance del asset '${assetName}' para ${userAddress}: ${assetBalance}`);
         res.status(200).json({
             message: 'Balance de asset obtenido correctamente.',
             address: userAddress,
@@ -619,6 +616,7 @@ router.post('/importAsset', async (req, res) => {
 
         const assetDetails = await provider.getassetdetailsbyname(assetName);
         const referenceHash = assetDetails.ReferenceHash;
+        const assetId = assetDetails.Asset_id;
         console.log(`Detalles del asset importado: ${JSON.stringify(assetDetails)}`);
         console.log(`Valor: ${referenceHash}`);
 
@@ -633,7 +631,7 @@ router.post('/importAsset', async (req, res) => {
             description: description || '',
             price: price || 0,
             referenceHash: referenceHash || '',
-            asset_id: assetName,
+            asset_id: assetId,
             WalletId: userWallet.id
         });
 
@@ -645,8 +643,10 @@ router.post('/importAsset', async (req, res) => {
 });
 
 // Ruta para modificar el estado de listado de un asset
-router.put('/asset/:assetDbId/toggle-listing', async (req, res) => {
+router.put('/:assetDbId/toggle-listing', async (req, res) => {
     try {
+        console.log('--- INICIO TOGGLE LISTING ASSET ---');
+
         // 1. Verificar token y obtener email del usuario
         const authHeader = req.headers.authorization;
         if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -679,9 +679,11 @@ router.put('/asset/:assetDbId/toggle-listing', async (req, res) => {
         });
 
         if (!usuario) {
+            console.error('Usuario no encontrado:', userEmail);
             return res.status(404).json({ message: 'Usuario no encontrado.' });
         }
         if (!usuario.wallets || usuario.wallets.length === 0) {
+            console.error('Wallet no encontrada para el usuario:', userEmail);
             return res.status(404).json({ message: 'Wallet no encontrada para el usuario.' });
         }
         // Suponemos que el asset puede estar en cualquiera de las wallets del usuario
@@ -696,6 +698,7 @@ router.put('/asset/:assetDbId/toggle-listing', async (req, res) => {
         });
 
         if (!assetToUpdate) {
+            console.error('Asset no encontrado o no pertenece al usuario:', assetDbId, userEmail);
             return res.status(404).json({ message: 'Asset no encontrado o no pertenece al usuario.' });
         }
 
