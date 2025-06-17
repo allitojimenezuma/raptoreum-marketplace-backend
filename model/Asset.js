@@ -21,6 +21,11 @@ const Asset = sequelize.define('Asset', {
     type: DataTypes.STRING,
     allowNull: true
   },
+  isListed: { 
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: true 
+  }
 
   
 });

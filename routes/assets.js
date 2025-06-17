@@ -644,6 +644,80 @@ router.post('/importAsset', async (req, res) => {
     }
 });
 
+// Ruta para modificar el estado de listado de un asset
+router.put('/asset/:assetDbId/toggle-listing', async (req, res) => {
+    try {
+        // 1. Verificar token y obtener email del usuario
+        const authHeader = req.headers.authorization;
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return res.status(401).json({ message: 'Token de autorización requerido.' });
+        }
+        const token = authHeader.split(' ')[1];
+        let decodedToken;
+        try {
+            decodedToken = jwt.verify(token, process.env.JWT_SECRET);
+        } catch (err) {
+            return res.status(401).json({ message: 'Token inválido o expirado.' });
+        }
+        const userEmail = decodedToken.email;
+        if (!userEmail) {
+            return res.status(401).json({ message: 'Email no encontrado en el token.' });
+        }
+
+        // 2. Obtener el ID del asset de los parámetros de la ruta y el nuevo estado del cuerpo de la solicitud
+        const { assetDbId } = req.params; // ID del asset en tu base de datos
+        const { isListed } = req.body; // Nuevo estado booleano (true o false)
+
+        if (typeof isListed !== 'boolean') {
+            return res.status(400).json({ message: 'El campo "isListed" es requerido y debe ser un booleano (true/false).' });
+        }
+
+        // 3. Buscar usuario y su wallet para verificar propiedad
+        const usuario = await Usuario.findOne({
+            where: { email: userEmail },
+            include: [{ model: Wallet, as: 'wallets' }]
+        });
+
+        if (!usuario) {
+            return res.status(404).json({ message: 'Usuario no encontrado.' });
+        }
+        if (!usuario.wallets || usuario.wallets.length === 0) {
+            return res.status(404).json({ message: 'Wallet no encontrada para el usuario.' });
+        }
+        // Suponemos que el asset puede estar en cualquiera de las wallets del usuario
+        const userWalletIds = usuario.wallets.map(w => w.id);
+
+        // 4. Buscar el asset y verificar que pertenece al usuario
+        const assetToUpdate = await Asset.findOne({
+            where: {
+                id: assetDbId, // Busca por el ID de la base de datos del asset
+                WalletId: userWalletIds // Asegura que el WalletId del asset esté en las wallets del usuario
+            }
+        });
+
+        if (!assetToUpdate) {
+            return res.status(404).json({ message: 'Asset no encontrado o no pertenece al usuario.' });
+        }
+
+        // 5. Actualizar el estado 'isListed' del asset
+        assetToUpdate.isListed = isListed;
+        await assetToUpdate.save();
+
+        res.status(200).json({
+            message: `El estado de listado del asset '${assetToUpdate.name}' ha sido actualizado a ${isListed}.`,
+            asset: {
+                id: assetToUpdate.id,
+                name: assetToUpdate.name,
+                isListed: assetToUpdate.isListed
+            }
+        });
+
+    } catch (error) {
+        console.error('Error en la ruta /asset/:assetDbId/toggle-listing:', error);
+        res.status(500).json({ message: 'Error interno al actualizar el estado de listado del asset.', error: error.message });
+    }
+});
+
 
 
 
