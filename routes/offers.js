@@ -2,6 +2,9 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import { Offer, Usuario, Asset, Wallet } from '../model/index.js'; // Asegúrate que las importaciones sean correctas
 import { Op } from 'sequelize'; // Para operadores como OR
+import { transferAsset } from '../utils/blockchainService.js';
+import { decrypt } from '../utils/encryption.js';
+import sequelize from '../db.js';
 
 const router = express.Router();
 
@@ -141,6 +144,9 @@ router.post('/makeOffer', authenticateToken, async (req, res) => {
             if (isNaN(parsedExpiresAt.getTime()) || parsedExpiresAt <= new Date()) {
                 return res.status(400).json({ message: 'expiresAt debe ser una fecha válida y futura.' });
             }
+        } else {
+            // Si no se envía, poner 24h después de ahora
+            parsedExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
         }
 
         // 2. Obtener el usuario oferente
@@ -212,6 +218,104 @@ router.post('/makeOffer', authenticateToken, async (req, res) => {
     } catch (error) {
         console.error('Error al crear la oferta:', error);
         res.status(500).json({ message: 'Error interno al crear la oferta.', error: error.message });
+    }
+});
+
+// --- RUTA PARA ACEPTAR UNA OFERTA ---
+router.post('/:offerId/accept', authenticateToken, async (req, res) => {
+    const { offerId } = req.params;
+    let userId = req.user.id;
+    if (!userId && req.user.email) {
+        const usuario = await Usuario.findOne({ where: { email: req.user.email } });
+        if (usuario) userId = usuario.id;
+    }
+    const t = await sequelize.transaction();
+    try {
+        // 1. Buscar la oferta y el asset
+        const offer = await Offer.findOne({ where: { id: offerId, status: 'pending' }, transaction: t });
+        if (!offer) return res.status(404).json({ message: 'Oferta no encontrada o ya procesada.' });
+
+        const asset = await Asset.findOne({
+            where: { id: offer.AssetId },
+            include: [{
+                model: Wallet,
+                as: 'Wallet',
+                include: [{ model: Usuario, as: 'Usuario' }]
+            }],
+            transaction: t
+        });
+        if (!asset) return res.status(404).json({ message: 'Asset no encontrado.' });
+        if (!asset.Wallet || !asset.Wallet.Usuario) return res.status(500).json({ message: 'No se pudo determinar el propietario del asset.' });
+        if (asset.Wallet.Usuario.id !== userId) return res.status(403).json({ message: 'No eres el propietario del asset.' });
+
+        // 2. Obtener wallets y WIFs
+        const sellerWallet = asset.Wallet;
+        const sellerAddress = sellerWallet.direccion;
+        const sellerEncryptedWif = sellerWallet.wif;
+        const sellerWif = decrypt(sellerEncryptedWif); // Desencripta el WIF antes de usarlo
+        const assetBlockchainId = asset.name;
+        const offerer = await Usuario.findOne({ where: { id: offer.OffererUserId } });
+        if (!offerer) return res.status(404).json({ message: 'Usuario oferente no encontrado.' });
+        const offererWallet = await Wallet.findOne({ where: { UsuarioId: offerer.id } });
+        if (!offererWallet) return res.status(404).json({ message: 'Wallet del ofertante no encontrada.' });
+        const offererAddress = offererWallet.direccion;
+
+        // 3. Transferir el asset en blockchain
+        const { success, txid, message } = await transferAsset({
+            fromAddress: sellerAddress,
+            toAddress: offererAddress,
+            wif: sellerWif, // Usa el WIF desencriptado
+            assetName: assetBlockchainId
+        });
+        if (!success) throw new Error('Error en la transacción blockchain: ' + message);
+
+        // 4. Actualizar la base de datos
+        await asset.update({ WalletId: offererWallet.id }, { transaction: t });
+        offer.status = 'accepted';
+        offer.acceptedAt = new Date();
+        offer.txid = txid;
+        await offer.save({ transaction: t });
+        // Rechazar otras ofertas pendientes para ese asset
+        await Offer.update(
+            { status: 'rejected' },
+            { where: { AssetId: asset.id, status: 'pending', id: { [Op.ne]: offer.id } }, transaction: t }
+        );
+        await t.commit();
+        return res.json({ message: 'Oferta aceptada y asset transferido en blockchain.', txid });
+    } catch (err) {
+        await t.rollback();
+        return res.status(500).json({ message: err.message || 'Error al aceptar la oferta.' });
+    }
+});
+
+// --- RUTA PARA CANCELAR UNA OFERTA (por el oferente, versión debug) ---
+router.post('/:offerId/cancel', authenticateToken, async (req, res) => {
+    const { offerId } = req.params;
+    let userId = req.user.id;
+    if (!userId && req.user.email) {
+        // Busca el usuario por email si el id no está en el token
+        const usuario = await Usuario.findOne({ where: { email: req.user.email } });
+        if (usuario) userId = usuario.id;
+    }
+    console.log('Intentando cancelar oferta:', offerId, 'por usuario:', userId);
+    try {
+        // Busca la oferta y verifica que el usuario sea el que la creó y que esté pendiente
+        const offer = await Offer.findOne({ where: { id: offerId, OffererUserId: userId, status: 'pending' } });
+        console.log('Resultado búsqueda de oferta:', offer);
+        if (!offer) {
+            console.log('No se encontró la oferta o ya no está pendiente/corresponde al usuario.');
+            return res.status(404).json({ message: 'Oferta no encontrada o ya procesada.' });
+        }
+
+        offer.status = 'cancelled';
+        offer.updatedAt = new Date();
+        await offer.save();
+        console.log('Oferta cancelada correctamente:', offer.id);
+
+        return res.json({ message: 'Oferta cancelada correctamente.' });
+    } catch (err) {
+        console.error('Error al cancelar la oferta:', err);
+        return res.status(500).json({ message: 'Error al cancelar la oferta.', error: err.message });
     }
 });
 
