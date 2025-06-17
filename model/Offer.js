@@ -20,6 +20,10 @@ const Offer = sequelize.define('Offer', {
   expiresAt: { // Fecha y hora en la que la oferta expira (opcional)
     type: DataTypes.DATE,
     allowNull: true
+  },
+  txid: {
+    type: DataTypes.STRING,
+    allowNull: true
   }
   // Los campos AssetId, OffererUserId (quien hace la oferta), y OwnerUserId (dueño del asset en el momento de la oferta)
   // se añadirán a través de las asociaciones.

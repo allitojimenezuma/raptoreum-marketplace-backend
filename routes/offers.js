@@ -259,9 +259,38 @@ router.post('/:offerId/accept', authenticateToken, async (req, res) => {
         const offererWallet = await Wallet.findOne({ where: { UsuarioId: offerer.id } });
         if (!offererWallet) return res.status(404).json({ message: 'Wallet del ofertante no encontrada.' });
         const offererAddress = offererWallet.direccion;
+        const offererEncryptedWif = offererWallet.wif;
+        const offererWif = decrypt(offererEncryptedWif);
+
+        // --- TRANSFERENCIA DE RTM DEL OFERENTE AL VENDEDOR (propietario del asset) ---
+        const Provider = (await import('../../rptClient_NPM/provider.js')).Provider;
+        const provider = new Provider({
+            RPC_USER: process.env.RPC_USER,
+            RPC_PASSWORD: process.env.RPC_PASSWORD,
+            RPC_PORT: process.env.RPC_PORT,
+            RPC_HOST: process.env.RPC_HOST
+        });
+        const assetPriceRTM = parseFloat(offer.offerPrice);
+        if (isNaN(assetPriceRTM) || assetPriceRTM <= 0) {
+            throw new Error('Precio de la oferta inválido.');
+        }
+        const assetPriceSatoshis = Math.round(assetPriceRTM * 1e8);
+
+        let txid;
+        try {
+            txid = await provider.sendRawTransaction(
+                offererAddress,   // fromAddress
+                sellerAddress,    // toAddress
+                offererWif,       // privateKeyWIF
+                assetPriceSatoshis // amountToSend (in satoshis)
+            );
+            await provider.waitTransaction(txid, 1);
+        } catch (paymentError) {
+            throw new Error('Error durante la transacción de pago RTM: ' + paymentError.message);
+        }
 
         // 3. Transferir el asset en blockchain
-        const { success, txid, message } = await transferAsset({
+        const { success, txid: assetTxid, message } = await transferAsset({
             fromAddress: sellerAddress,
             toAddress: offererAddress,
             wif: sellerWif, // Usa el WIF desencriptado
@@ -273,7 +302,7 @@ router.post('/:offerId/accept', authenticateToken, async (req, res) => {
         await asset.update({ WalletId: offererWallet.id }, { transaction: t });
         offer.status = 'accepted';
         offer.acceptedAt = new Date();
-        offer.txid = txid;
+        offer.txid = assetTxid;
         await offer.save({ transaction: t });
         // Rechazar otras ofertas pendientes para ese asset
         await Offer.update(
@@ -281,7 +310,7 @@ router.post('/:offerId/accept', authenticateToken, async (req, res) => {
             { where: { AssetId: asset.id, status: 'pending', id: { [Op.ne]: offer.id } }, transaction: t }
         );
         await t.commit();
-        return res.json({ message: 'Oferta aceptada y asset transferido en blockchain.', txid });
+        return res.json({ message: 'Oferta aceptada y asset transferido en blockchain.', txid: assetTxid });
     } catch (err) {
         await t.rollback();
         return res.status(500).json({ message: err.message || 'Error al aceptar la oferta.' });
