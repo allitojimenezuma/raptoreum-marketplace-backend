@@ -14,7 +14,7 @@ const Asset = sequelize.define('Asset', {
     allowNull: true
   },
   price: {
-    type: DataTypes.INTEGER,
+    type: DataTypes.DOUBLE,
     allowNull: true
   },
   referenceHash: {

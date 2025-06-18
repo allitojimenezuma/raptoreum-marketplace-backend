@@ -2,10 +2,11 @@ import axios from 'axios';
 import FormData from 'form-data';
 import express from 'express';
 import jwt from 'jsonwebtoken';
-import { Asset, Usuario, Wallet } from '../model/index.js';
+import { Asset, Usuario, Wallet, TransactionHistory } from '../model/index.js';
 import { Provider } from 'raptoreum.js';
 import upload from '../utils/multer.js';
 import { decrypt } from '../utils/encryption.js';
+import sequelize from '../db.js';
 import dotenv from 'dotenv';
 dotenv.config();
 
@@ -109,11 +110,11 @@ router.post('/createAsset', upload.single('foto'), async (req, res) => {
         }
 
         const provider = new Provider(
-      process.env.RPC_USER,
-      process.env.RPC_PASSWORD,
-      process.env.RPC_PORT,
-      process.env.RPC_HOST
-    );
+            process.env.RPC_USER,
+            process.env.RPC_PASSWORD,
+            process.env.RPC_PORT,
+            process.env.RPC_HOST
+        );
         const nodeWalletAddress = "RGpAUBToAQywJfJJAC9MCKpiHAvDAimy24"; // Central wallet for asset operations
         const customerAddress = wallet.direccion;
 
@@ -206,10 +207,10 @@ router.post('/createAsset', upload.single('foto'), async (req, res) => {
 // Traspaso de asset entre wallets (compra)
 router.post('/buy/:id', async (req, res) => {
     const provider = new Provider(
-      process.env.RPC_USER,
-      process.env.RPC_PASSWORD,
-      process.env.RPC_PORT,
-      process.env.RPC_HOST
+        process.env.RPC_USER,
+        process.env.RPC_PASSWORD,
+        process.env.RPC_PORT,
+        process.env.RPC_HOST
     ); // Instantiate provider early
 
     try {
@@ -239,10 +240,10 @@ router.post('/buy/:id', async (req, res) => {
             console.error('Asset no encontrado en la base de datos:', assetDbId);
             return res.status(404).json({ message: 'Asset no encontrado en la base de datos' });
         }
-        if (!assetToBuy.Wallet){
+        if (!assetToBuy.Wallet) {
             console.error('Wallet del vendedor no encontrada para este asset:', assetToBuy);
             return res.status(404).json({ message: 'Wallet del vendedor no encontrada para este asset' });
-        } 
+        }
 
         const sellerWallet = assetToBuy.Wallet;
         const sellerAddress = sellerWallet.direccion;
@@ -436,11 +437,11 @@ router.post('/send', async (req, res) => {
 
         // 5. Instantiate Provider
         const provider = new Provider(
-      process.env.RPC_USER,
-      process.env.RPC_PASSWORD,
-      process.env.RPC_PORT,
-      process.env.RPC_HOST
-    );
+            process.env.RPC_USER,
+            process.env.RPC_PASSWORD,
+            process.env.RPC_PORT,
+            process.env.RPC_HOST
+        );
 
         const txid = await provider.sendAssetTransaction(
             fromAddress,
@@ -526,11 +527,11 @@ router.post('/asset-balance', async (req, res) => {
 
         // 4. Instantiate Provider
         const provider = new Provider(
-      process.env.RPC_USER,
-      process.env.RPC_PASSWORD,
-      process.env.RPC_PORT,
-      process.env.RPC_HOST
-    );
+            process.env.RPC_USER,
+            process.env.RPC_PASSWORD,
+            process.env.RPC_PORT,
+            process.env.RPC_HOST
+        );
 
         // 5. Get list of addresses and amounts for the asset
         const addressesWithAsset = await provider.listaddressesbyasset(assetName);
@@ -604,11 +605,11 @@ router.post('/importAsset', async (req, res) => {
 
         // 4. Verificar que el asset esté en la wallet del usuario usando el Provider
         const provider = new Provider(
-      process.env.RPC_USER,
-      process.env.RPC_PASSWORD,
-      process.env.RPC_PORT,
-      process.env.RPC_HOST
-    );
+            process.env.RPC_USER,
+            process.env.RPC_PASSWORD,
+            process.env.RPC_PORT,
+            process.env.RPC_HOST
+        );
         const addressesWithAsset = await provider.listaddressesbyasset(assetName);
         if (!addressesWithAsset || !addressesWithAsset[userAddress] || addressesWithAsset[userAddress] <= 0) {
             return res.status(403).json({ message: 'El asset no está en la wallet del usuario.' });
@@ -762,6 +763,277 @@ router.put('/updatePrice/:id', async (req, res) => {
     } catch (error) {
         console.error('Error al actualizar el precio del asset:', error);
         res.status(500).json({ message: 'Error interno al actualizar el precio.', error: error.message });
+    }
+});
+
+// Ruta para modificar la descripción de un asset
+router.put('/updateDescription/:id', async (req, res) => {
+    try {
+        // 1. Verificar token y obtener email del usuario
+        const authHeader = req.headers.authorization;
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return res.status(401).json({ message: 'Token de autorización requerido.' });
+        }
+        const token = authHeader.replace('Bearer ', '');
+        let decoded;
+        try {
+            decoded = jwt.verify(token, process.env.JWT_SECRET);
+        } catch (err) {
+            return res.status(401).json({ message: 'Token inválido.' });
+        }
+        const userEmail = decoded.email;
+        if (!userEmail) {
+            return res.status(401).json({ message: 'Email no encontrado en el token.' });
+        }
+
+        // 2. Obtener ID del asset y la nueva descripción
+        const assetId = req.params.id;
+        const { description } = req.body;
+
+        if (description === undefined || typeof description !== 'string') {
+            return res.status(400).json({ message: 'El campo "description" es requerido y debe ser una cadena de texto.' });
+        }
+
+        // 3. Buscar usuario y sus wallets para verificar propiedad
+        const usuario = await Usuario.findOne({
+            where: { email: userEmail },
+            include: [{ model: Wallet, as: 'wallets' }]
+        });
+
+        if (!usuario || !usuario.wallets || usuario.wallets.length === 0) {
+            return res.status(404).json({ message: 'Usuario o wallet no encontrado.' });
+        }
+        const userWalletIds = usuario.wallets.map(w => w.id);
+
+        // 4. Buscar el asset y verificar que pertenece al usuario
+        const asset = await Asset.findOne({
+            where: { id: assetId, WalletId: userWalletIds }
+        });
+
+        if (!asset) {
+            return res.status(404).json({ message: 'Asset no encontrado o no pertenece al usuario.' });
+        }
+
+        // 5. Actualizar la descripción y guardar
+        asset.description = description;
+        await asset.save();
+
+        res.status(200).json({
+            message: 'Descripción del asset actualizada correctamente.',
+            asset: {
+                id: asset.id,
+                name: asset.name,
+                description: asset.description
+            }
+        });
+
+    } catch (error) {
+        console.error('Error al actualizar la descripción del asset:', error);
+        res.status(500).json({ message: 'Error interno al actualizar la descripción.', error: error.message });
+    }
+});
+
+// Ruta para encontrar assets que un usuario posee en la blockchain pero no están en la base de datos
+router.get('/missingAssets', async (req, res) => {
+    try {
+        console.log('--- INICIO BÚSQUEDA DE ASSETS FALTANTES ---');
+
+        // 1. Verificar token y obtener email del usuario
+        const authHeader = req.headers.authorization;
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return res.status(401).json({ message: 'Token de autorización requerido.' });
+        }
+        const token = authHeader.split(' ')[1];
+        let decodedToken;
+        try {
+            decodedToken = jwt.verify(token, process.env.JWT_SECRET);
+        } catch (err) {
+            return res.status(401).json({ message: 'Token inválido o expirado.' });
+        }
+        const userEmail = decodedToken.email;
+        if (!userEmail) {
+            return res.status(401).json({ message: 'Email no encontrado en el token.' });
+        }
+
+        // 2. Buscar usuario y su wallet
+        const usuario = await Usuario.findOne({
+            where: { email: userEmail },
+            include: [{ model: Wallet, as: 'wallets' }]
+        });
+
+        if (!usuario || !usuario.wallets || usuario.wallets.length === 0) {
+            return res.status(404).json({ message: 'Wallet no encontrada para el usuario.' });
+        }
+        const userWallet = usuario.wallets[0];
+        const userAddress = userWallet.direccion;
+        const userWalletId = userWallet.id;
+
+        console.log(`Buscando assets para la dirección: ${userAddress}`);
+
+        // 3. Obtener todos los assets de la dirección desde la blockchain
+        const provider = new Provider(
+            process.env.RPC_USER,
+            process.env.RPC_PASSWORD,
+            process.env.RPC_PORT,
+            process.env.RPC_HOST
+        );
+        const onChainAssets = await provider.listassetbalancesbyaddress(userAddress);
+        const onChainAssetNames = Object.keys(onChainAssets);
+        console.log(`Assets en blockchain: ${onChainAssetNames.join(', ')}`);
+
+        // 4. Obtener todos los assets registrados en la base de datos para esa wallet
+        const dbAssets = await Asset.findAll({ where: { WalletId: userWalletId } });
+        const dbAssetNames = dbAssets.map(asset => asset.name);
+        console.log(`Assets en la base de datos: ${dbAssetNames.join(', ')}`);
+
+        // 5. Comparar y encontrar los assets que están en la blockchain pero no en la BD
+        const missingAssetNames = onChainAssetNames.filter(name => !dbAssetNames.includes(name));
+        console.log(`Assets faltantes: ${missingAssetNames.join(', ')}`);
+
+        if (missingAssetNames.length === 0) {
+            return res.status(200).json({
+                message: 'No se encontraron assets faltantes. Todos los assets de la blockchain están sincronizados.',
+                missingAssets: []
+            });
+        }
+
+        // 6. (Opcional) Obtener detalles de los assets faltantes para una respuesta más rica
+        const missingAssetsDetails = [];
+        for (const assetName of missingAssetNames) {
+            try {
+                const details = await provider.getassetdetailsbyname(assetName);
+                missingAssetsDetails.push({
+                    name: assetName,
+                    balance: onChainAssets[assetName],
+                    assetId: details.Asset_id,
+                    referenceHash: details.ReferenceHash
+                });
+            } catch (detailError) {
+                console.error(`No se pudieron obtener los detalles para el asset faltante ${assetName}:`, detailError);
+                missingAssetsDetails.push({
+                    name: assetName,
+                    balance: onChainAssets[assetName],
+                    error: 'No se pudieron obtener los detalles del asset.'
+                });
+            }
+        }
+
+        res.status(200).json({
+            message: 'Se encontraron assets en su wallet que no están registrados en la plataforma.',
+            missingAssets: missingAssetsDetails
+        });
+
+    } catch (error) {
+        console.error('Error en la ruta /missingAssets:', error);
+        if (error.message.includes("RPC call")) {
+            return res.status(500).json({ message: 'Error de comunicación con el nodo Raptoreum.', details: error.message });
+        }
+        res.status(500).json({ message: 'Error interno al buscar assets faltantes.', error: error.message });
+    }
+});
+
+// Ruta para importar assets faltantes al sistema
+router.post('/importMissingAssets', async (req, res) => {
+    try {
+        // 1. Verificar token y obtener email del usuario
+        const authHeader = req.headers.authorization;
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return res.status(401).json({ message: 'Token de autorización requerido.' });
+        }
+        const token = authHeader.split(' ')[1];
+        let decodedToken;
+        try {
+            decodedToken = jwt.verify(token, process.env.JWT_SECRET);
+        } catch (err) {
+            return res.status(401).json({ message: 'Token inválido o expirado.' });
+        }
+        const userEmail = decodedToken.email;
+        if (!userEmail) {
+            return res.status(401).json({ message: 'Email no encontrado en el token.' });
+        }
+
+        // 2. Buscar usuario y su wallet
+        const usuario = await Usuario.findOne({
+            where: { email: userEmail },
+            include: [{ model: Wallet, as: 'wallets' }]
+        });
+
+        if (!usuario || !usuario.wallets || usuario.wallets.length === 0) {
+            return res.status(404).json({ message: 'Wallet no encontrada para el usuario.' });
+        }
+        const userWallet = usuario.wallets[0];
+        const userAddress = userWallet.direccion;
+        const userWalletId = userWallet.id;
+        const userId = usuario.id;
+
+        // 3. Encontrar assets faltantes (lógica de /missingAssets)
+        const provider = new Provider(
+            process.env.RPC_USER,
+            process.env.RPC_PASSWORD,
+            process.env.RPC_PORT,
+            process.env.RPC_HOST
+        );
+        const onChainAssets = await provider.listassetbalancesbyaddress(userAddress);
+        const onChainAssetNames = Object.keys(onChainAssets);
+        const dbAssets = await Asset.findAll({ where: { WalletId: userWalletId } });
+        const dbAssetNames = dbAssets.map(asset => asset.name);
+        const missingAssetNames = onChainAssetNames.filter(name => !dbAssetNames.includes(name));
+
+        if (missingAssetNames.length === 0) {
+            return res.status(200).json({ message: 'No se encontraron assets nuevos para importar.' });
+        }
+        console.log(`Se encontraron ${missingAssetNames.length} assets para importar: ${missingAssetNames.join(', ')}`);
+
+        // 4. Iterar e importar cada asset faltante
+        const importedAssets = [];
+        const failedAssets = [];
+
+        for (const assetName of missingAssetNames) {
+            const t = await sequelize.transaction();
+            try {
+                const details = await provider.getassetdetailsbyname(assetName);
+
+                // Crear el Asset en la BD
+                const newAsset = await Asset.create({
+                    name: assetName,
+                    description: 'Asset importado automáticamente desde la blockchain.',
+                    price: 0,
+                    isListed: false,
+                    referenceHash: details.ReferenceHash || '',
+                    asset_id: details.Asset_id.toString(),
+                    WalletId: userWalletId
+                }, { transaction: t });
+
+                // Crear el registro en TransactionHistory
+                await TransactionHistory.create({
+                    transactionType: 'import',
+                    priceAtTransaction: 0,
+                    blockchainAssetTxId: details.Asset_id.toString(), // Usamos el ID numérico como referencia
+                    AssetId: newAsset.id,
+                    BuyerUserId: userId, // El usuario que importa es el "comprador"
+                    SellerUserId: null
+                }, { transaction: t });
+
+                await t.commit();
+                importedAssets.push(newAsset.toJSON());
+                console.log(`Asset '${assetName}' importado correctamente.`);
+
+            } catch (importError) {
+                await t.rollback();
+                console.error(`Fallo al importar el asset '${assetName}':`, importError);
+                failedAssets.push({ name: assetName, error: importError.message });
+            }
+        }
+
+        res.status(201).json({
+            message: `Proceso de importación finalizado. ${importedAssets.length} assets importados, ${failedAssets.length} fallaron.`,
+            imported: importedAssets,
+            failed: failedAssets
+        });
+
+    } catch (error) {
+        console.error('Error en la ruta /importMissingAssets:', error);
+        res.status(500).json({ message: 'Error interno al importar los assets.', error: error.message });
     }
 });
 

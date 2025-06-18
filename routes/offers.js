@@ -5,6 +5,7 @@ import { Op } from 'sequelize'; // Para operadores como OR
 import { transferAsset } from '../utils/blockchainService.js';
 import { decrypt } from '../utils/encryption.js';
 import sequelize from '../db.js';
+import { Provider } from 'raptoreum.js';
 
 const router = express.Router();
 
@@ -263,13 +264,13 @@ router.post('/:offerId/accept', authenticateToken, async (req, res) => {
         const offererWif = decrypt(offererEncryptedWif);
 
         // --- TRANSFERENCIA DE RTM DEL OFERENTE AL VENDEDOR (propietario del asset) ---
-        const Provider = (await import('../../rptClient_NPM/provider.js')).Provider;
         const provider = new Provider({
             RPC_USER: process.env.RPC_USER,
             RPC_PASSWORD: process.env.RPC_PASSWORD,
             RPC_PORT: process.env.RPC_PORT,
             RPC_HOST: process.env.RPC_HOST
         });
+        
         const assetPriceRTM = parseFloat(offer.offerPrice);
         if (isNaN(assetPriceRTM) || assetPriceRTM <= 0) {
             throw new Error('Precio de la oferta inválido.');
