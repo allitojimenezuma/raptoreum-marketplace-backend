@@ -1,10 +1,11 @@
 import express from 'express';
-import { Asset, Usuario, Wallet } from '../model/index.js';
+import { Asset, Usuario, Wallet, TransactionHistory } from '../model/index.js';
 import jwt from 'jsonwebtoken';
 import nodemailer from 'nodemailer';
 import crypto from 'crypto';
 import { Provider } from 'raptoreum.js';
 import bcrypt from 'bcrypt';
+import { Op } from 'sequelize';
 import dotenv from 'dotenv';
 dotenv.config();
 
@@ -305,6 +306,66 @@ router.get('/balance', async (req, res) => {
     res.status(500).json({ message: 'Error interno del servidor al obtener el balance.', error: error.message });
   }
 });
+
+// Ruta para obtener el historial de transacciones de un usuario (compras y ventas)
+router.get('/history', async (req, res) => {
+  try {
+    // 1. Verificar token y obtener el usuario
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ message: 'Token de autorización requerido.' });
+    }
+    const token = authHeader.split(' ')[1];
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (err) {
+      return res.status(401).json({ message: 'Token inválido o expirado.' });
+    }
+
+    const usuario = await Usuario.findOne({ where: { email: decoded.email } });
+    if (!usuario) {
+      return res.status(404).json({ message: 'Usuario no encontrado.' });
+    }
+
+    // 2. Buscar todas las transacciones donde el usuario es comprador O vendedor
+    const transactions = await TransactionHistory.findAll({
+      where: {
+        [Op.or]: [
+          { BuyerUserId: usuario.id },
+          { SellerUserId: usuario.id }
+        ]
+      },
+      include: [
+        {
+          model: Asset,
+          as: 'asset',
+          attributes: ['id', 'name', 'asset_id', 'referenceHash']
+        },
+        {
+          model: Usuario,
+          as: 'seller',
+          attributes: ['id', 'name', 'email'] // Excluir datos sensibles
+        },
+        {
+          model: Usuario,
+          as: 'buyer',
+          attributes: ['id', 'name', 'email'] // Excluir datos sensibles
+        }
+      ],
+      order: [['createdAt', 'DESC']] // Ordenar por fecha, de más reciente a más antiguo
+    });
+
+    res.status(200).json(transactions);
+
+  } catch (error) {
+    console.error('Error al obtener el historial de transacciones:', error);
+    res.status(500).json({ message: 'Error interno al obtener el historial de transacciones.', error: error.message });
+  }
+});
+
+
+
 
 
 

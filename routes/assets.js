@@ -1037,7 +1037,47 @@ router.post('/importMissingAssets', async (req, res) => {
     }
 });
 
+// Ruta para obtener el historial de transacciones de un asset específico
+router.get('/:id/history', async (req, res) => {
+    try {
+        const assetId = req.params.id;
 
+        // 1. Buscar el asset por asset_id (no por PK)
+        const asset = await Asset.findOne({ where: { asset_id: assetId } });
+        if (!asset) {
+            return res.status(404).json({ message: 'Asset no encontrado.' });
+        }
+
+        // 2. Buscar todas las transacciones para este AssetId
+        const history = await TransactionHistory.findAll({
+            where: { blockchainAssetTxId: asset.asset_id },
+            include: [
+            {
+                model: Asset,
+                as: 'asset',
+                attributes: ['id', 'name']
+            },
+            {
+                model: Usuario,
+                as: 'buyer',
+                attributes: ['id', 'name', 'email'] // Excluir datos sensibles
+                },
+                {
+                    model: Usuario,
+                    as: 'seller',
+                    attributes: ['id', 'name', 'email'] // Excluir datos sensibles
+                }
+            ],
+            order: [['createdAt', 'DESC']] // Ordenar por fecha, de más reciente a más antiguo
+        });
+
+        res.status(200).json(history);
+
+    } catch (error) {
+        console.error(`Error al obtener el historial para el asset ${req.params.id}:`, error);
+        res.status(500).json({ message: 'Error interno al obtener el historial del asset.', error: error.message });
+    }
+});
 
 
 
