@@ -236,7 +236,6 @@ router.post('/reset-password', async (req, res) => {
 // Obtener el balance de la wallet del usuario autenticado
 router.get('/balance', async (req, res) => {
   try {
-    console.log('--- INICIO OBTENER BALANCE ---');
     // 1. Extract and verify token
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -286,11 +285,9 @@ router.get('/balance', async (req, res) => {
     );
 
     // 4. Get balance
-    console.log(`Consultando balance para la dirección: ${userAddress}`);
     const balanceSatoshis = await provider.getBalance(userAddress);
     const balanceRTM = balanceSatoshis / 1e8; // Convert satoshis to RTM
 
-    console.log(`Balance obtenido: ${balanceSatoshis} satoshis (${balanceRTM} RTM)`);
     res.status(200).json({
       message: 'Balance obtenido correctamente.',
       address: userAddress,

@@ -199,8 +199,8 @@ router.post('/createAsset', upload.single('foto'), async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error creating asset:', error?.response?.data);
-        res.status(500).json({ error: 'Internal server error during asset creation', details: error?.response?.data });
+        console.error('Error creating asset:', error.message);
+        res.status(500).json({ error: 'Internal server error during asset creation', details: error.message });
     }
 });
 
