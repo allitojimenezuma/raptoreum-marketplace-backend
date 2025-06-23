@@ -1,6 +1,6 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
-import { Offer, Usuario, Asset, Wallet } from '../model/index.js'; // Asegúrate que las importaciones sean correctas
+import { Offer, Usuario, Asset, Wallet, TransactionHistory } from '../model/index.js'; // Asegúrate que las importaciones sean correctas
 import { Op } from 'sequelize'; // Para operadores como OR
 import { transferAsset } from '../utils/blockchainService.js';
 import { decrypt } from '../utils/encryption.js';
@@ -249,6 +249,9 @@ router.post('/:offerId/accept', authenticateToken, async (req, res) => {
         if (!asset.Wallet || !asset.Wallet.Usuario) return res.status(500).json({ message: 'No se pudo determinar el propietario del asset.' });
         if (asset.Wallet.Usuario.id !== userId) return res.status(403).json({ message: 'No eres el propietario del asset.' });
 
+        // Guardar el id del vendedor antes de actualizar el asset
+        const sellerUserId = asset.Wallet.Usuario.id;
+
         // 2. Obtener wallets y WIFs
         const sellerWallet = asset.Wallet;
         const sellerAddress = sellerWallet.direccion;
@@ -264,12 +267,12 @@ router.post('/:offerId/accept', authenticateToken, async (req, res) => {
         const offererWif = decrypt(offererEncryptedWif);
 
         // --- TRANSFERENCIA DE RTM DEL OFERENTE AL VENDEDOR (propietario del asset) ---
-        const provider = new Provider({
-            RPC_USER: process.env.RPC_USER,
-            RPC_PASSWORD: process.env.RPC_PASSWORD,
-            RPC_PORT: process.env.RPC_PORT,
-            RPC_HOST: process.env.RPC_HOST
-        });
+        const provider = new Provider(
+            process.env.RPC_USER,
+            process.env.RPC_PASSWORD,
+            process.env.RPC_PORT,
+            process.env.RPC_HOST
+        );
         
         const assetPriceRTM = parseFloat(offer.offerPrice);
         if (isNaN(assetPriceRTM) || assetPriceRTM <= 0) {
@@ -310,6 +313,19 @@ router.post('/:offerId/accept', authenticateToken, async (req, res) => {
             { status: 'rejected' },
             { where: { AssetId: asset.id, status: 'pending', id: { [Op.ne]: offer.id } }, transaction: t }
         );
+
+        // --- REGISTRO EN HISTÓRICO DE TRANSACCIONES ---
+        await TransactionHistory.create({
+            transactionType: 'offer-accepted',
+            priceAtTransaction: assetPriceRTM,
+            blockchainAssetTxId: assetTxid, // TXID de la transferencia del asset
+            blockchainPaymentTxId: txid,
+            AssetId: asset.id, // ID interno de la tabla Asset
+            SellerUserId: sellerUserId,
+            BuyerUserId: offerer.id,
+            notes: `Oferta aceptada. OfertaId: ${offer.id}`
+        }, { transaction: t });
+
         await t.commit();
         return res.json({ message: 'Oferta aceptada y asset transferido en blockchain.', txid: assetTxid });
     } catch (err) {

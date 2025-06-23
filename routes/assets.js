@@ -1048,27 +1048,27 @@ router.get('/:id/history', async (req, res) => {
             return res.status(404).json({ message: 'Asset no encontrado.' });
         }
 
-        // 2. Buscar todas las transacciones para este AssetId
+        // 2. Buscar todas las transacciones para este AssetId (por campo AssetId, no blockchainAssetTxId)
         const history = await TransactionHistory.findAll({
-            where: { blockchainAssetTxId: asset.asset_id },
+            where: { AssetId: asset.id },
             include: [
-            {
-                model: Asset,
-                as: 'asset',
-                attributes: ['id', 'name']
-            },
-            {
-                model: Usuario,
-                as: 'buyer',
-                attributes: ['id', 'name', 'email'] // Excluir datos sensibles
+                {
+                    model: Asset,
+                    as: 'asset',
+                    attributes: ['id', 'name']
+                },
+                {
+                    model: Usuario,
+                    as: 'buyer',
+                    attributes: ['id', 'name', 'email']
                 },
                 {
                     model: Usuario,
                     as: 'seller',
-                    attributes: ['id', 'name', 'email'] // Excluir datos sensibles
+                    attributes: ['id', 'name', 'email']
                 }
             ],
-            order: [['createdAt', 'DESC']] // Ordenar por fecha, de más reciente a más antiguo
+            order: [['createdAt', 'DESC']]
         });
 
         res.status(200).json(history);
