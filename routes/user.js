@@ -33,7 +33,7 @@ router.post('/token', async (req, res) => {
   }
 });
 
-//Obtener info user, wallets y assets por email
+// Obtener info user, wallets y assets por email
 router.post('/info', async (req, res) => {
   const { email } = req.body;
 
@@ -101,28 +101,28 @@ router.post('/request-password-change', async (req, res) => {
     }
     console.log('Usuario encontrado:', user.id);
 
-    // Generate a reset token
+    // Generar el token de restablecimiento de contraseña
     console.log('Generando reset token...');
     const resetToken = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, { expiresIn: '15m' });
     const hashedResetToken = crypto.createHash('sha256').update(resetToken).digest('hex');
     console.log('Reset token generado y hasheado.');
 
-    // Save the hashed token and expiry date to the user
+    // Guardar el token y la expiración en la base de datos
     user.passwordResetToken = hashedResetToken;
-    user.passwordResetExpires = Date.now() + 15 * 60 * 1000; // 15 minutes
+    user.passwordResetExpires = Date.now() + 15 * 60 * 1000; // 15 minutos de expiración
     await user.save();
     console.log('Usuario guardado con reset token.');
 
-    // Send the email
+    // Enviar el email con el enlace de restablecimiento de contraseña
     console.log('Configurando transportador de email...');
     const transporter = nodemailer.createTransport({
       service: 'gmail',
       auth: {
-        user: process.env.EMAIL_USER, // Your email address
-        pass: process.env.EMAIL_PASS  // Your email password or app password
+        user: process.env.EMAIL_USER, // Tu dirección de correo electrónico
+        pass: process.env.EMAIL_PASS  // Tu contraseña de aplicación de Gmail
       },
       tls: {
-        rejectUnauthorized: false // Add this to handle self-signed certificate issues
+        rejectUnauthorized: false // Añadir esto para manejar problemas de certificados autofirmados
       }
     });
     console.log('Email transporter configurado.');
@@ -174,7 +174,7 @@ router.post('/reset-password', async (req, res) => {
   // }
 
   try {
-    // Verify the JWT token first (this is the raw token from the email link)
+    // Verificar el token JWT
     let decodedJwt;
     try {
       decodedJwt = jwt.verify(token, process.env.JWT_SECRET);
@@ -184,7 +184,7 @@ router.post('/reset-password', async (req, res) => {
       return res.status(400).json({ error: 'Enlace de restablecimiento de contraseña expirado.' });
     }
 
-    // Hash the token received from the URL to compare with the one stored in DB
+    // Hash el token recibido del enlace
     const hashedTokenFromUrl = crypto.createHash('sha256').update(token).digest('hex');
     console.log('Hashed token from URL:', hashedTokenFromUrl);
 
@@ -201,10 +201,10 @@ router.post('/reset-password', async (req, res) => {
     }
     console.log('Usuario encontrado para el token de restablecimiento:', user.id);
 
-    // Check expiry manually if not using Op.gt
+    // Chequear si el token ha expirado
     if (user.passwordResetExpires < Date.now()) {
       console.log('El enlace de restablecimiento de contraseña ha expirado para el usuario:', user.id);
-      // Clear the expired token fields
+      // Limpiar los campos del token de restablecimiento
       user.passwordResetToken = null;
       user.passwordResetExpires = null;
       await user.save();
@@ -212,12 +212,12 @@ router.post('/reset-password', async (req, res) => {
     }
     console.log('El enlace de restablecimiento de contraseña no ha expirado.');
 
-    // Hash the new password
+    // Hash el nuevo password
     console.log('Hasheando nueva contraseña...');
     const hashedPassword = await bcrypt.hash(newPassword, 10);
     console.log('Nueva contraseña hasheada.');
 
-    // Update password and clear reset token fields
+    // Actualizar la contraseña del usuario y limpiar los campos del token de restablecimiento
     user.password = hashedPassword;
     user.passwordResetToken = null;
     user.passwordResetExpires = null;
@@ -236,7 +236,7 @@ router.post('/reset-password', async (req, res) => {
 // Obtener el balance de la wallet del usuario autenticado
 router.get('/balance', async (req, res) => {
   try {
-    // 1. Extract and verify token
+    // 1. Extraer y verificar token
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return res.status(401).json({ message: 'Token de autorización requerido.' });
@@ -255,7 +255,7 @@ router.get('/balance', async (req, res) => {
       return res.status(401).json({ message: 'Email no encontrado en el token.' });
     }
 
-    // 2. Fetch user and their primary wallet
+    // 2. Buscar el usuario y su wallet
     const usuario = await Usuario.findOne({
       where: { email: userEmail },
       include: [{ model: Wallet, as: 'wallets' }]
@@ -268,7 +268,7 @@ router.get('/balance', async (req, res) => {
       return res.status(404).json({ message: 'Wallet no encontrada para el usuario.' });
     }
 
-    // Assuming the first wallet is the one to use
+    // Asumir que el usuario tiene al menos una wallet y usar la primera
     const userWallet = usuario.wallets[0];
     const userAddress = userWallet.direccion;
 
@@ -276,7 +276,7 @@ router.get('/balance', async (req, res) => {
       return res.status(500).json({ message: 'Dirección de la wallet no encontrada.' });
     }
 
-    // 3. Instantiate Provider
+    // 3. Instanciar Provider
     const provider = new Provider(
       process.env.RPC_USER,
       process.env.RPC_PASSWORD,
@@ -284,9 +284,9 @@ router.get('/balance', async (req, res) => {
       process.env.RPC_HOST
     );
 
-    // 4. Get balance
+    // 4. Obtener balance
     const balanceSatoshis = await provider.getBalance(userAddress);
-    const balanceRTM = balanceSatoshis / 1e8; // Convert satoshis to RTM
+    const balanceRTM = balanceSatoshis / 1e8; // Convertir satoshis a RTM
 
     res.status(200).json({
       message: 'Balance obtenido correctamente.',
@@ -360,10 +360,5 @@ router.get('/history', async (req, res) => {
     res.status(500).json({ message: 'Error interno al obtener el historial de transacciones.', error: error.message });
   }
 });
-
-
-
-
-
 
 export default router;
