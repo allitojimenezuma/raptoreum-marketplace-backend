@@ -10,10 +10,7 @@ import sequelize from '../db.js';
 import dotenv from 'dotenv';
 dotenv.config();
 
-
-
 const router = express.Router();
-
 
 /**
  * Sube una imagen dada como Data URL base64 a IPFS via Raptoreum usando axios.
@@ -340,6 +337,23 @@ router.post('/buy/:id', async (req, res) => {
         console.log(`[BUY FLOW] Actualizando propietario del asset en la base de datos a Wallet ID: ${buyerWallet.id}`);
         await assetToBuy.update({ WalletId: buyerWallet.id });
         console.log('[BUY FLOW] Asset actualizado en BD con nuevo WalletId:', buyerWallet.id);
+
+        // --- REGISTRO EN HISTORIAL DE TRANSACCIONES ---
+        try {
+            await TransactionHistory.create({
+                transactionType: 'Compra',
+                priceAtTransaction: assetPriceRTM,
+                blockchainAssetTxId: assetTransferTxid,
+                blockchainPaymentTxId: paymentTxid,
+                AssetId: assetToBuy.id,
+                SellerUserId: sellerWallet.UsuarioId || (assetToBuy.Wallet.Usuario ? assetToBuy.Wallet.Usuario.id : null),
+                BuyerUserId: buyerUsuario.id
+            });
+            console.log('[BUY FLOW] Registro de transacción añadido a TransactionHistory.');
+        } catch (historyError) {
+            console.error('[BUY FLOW] Error al registrar la transacción en TransactionHistory:', historyError);
+            // No detenemos la compra por esto, pero lo logueamos
+        }
 
         res.json({
             message: 'Compra realizada con éxito. Pago y transferencia de asset confirmados en la blockchain.',
@@ -1079,6 +1093,66 @@ router.get('/:id/history', async (req, res) => {
     }
 });
 
-
+// Endpoint para obtener el historial de transacciones del usuario autenticado (compras y ventas)
+router.get('/user/history', async (req, res) => {
+    try {
+        const authHeader = req.headers.authorization;
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return res.status(401).json({ message: 'Token de autorización requerido.' });
+        }
+        const token = authHeader.replace('Bearer ', '');
+        let decoded;
+        try {
+            decoded = jwt.verify(token, process.env.JWT_SECRET);
+        } catch (err) {
+            return res.status(401).json({ message: 'Token inválido.' });
+        }
+        const userId = decoded.id || decoded.userId || decoded.usuarioId || decoded.uid || decoded.sub || decoded._id || decoded.id || null;
+        const userEmail = decoded.email;
+        if (!userEmail && !userId) {
+            return res.status(401).json({ message: 'No se pudo determinar el usuario.' });
+        }
+        // Buscar el usuario para obtener el id si solo tenemos el email
+        let usuario = null;
+        if (!userId && userEmail) {
+            usuario = await Usuario.findOne({ where: { email: userEmail } });
+        }
+        const finalUserId = userId || (usuario ? usuario.id : null);
+        if (!finalUserId) {
+            return res.status(404).json({ message: 'Usuario no encontrado.' });
+        }
+        // Buscar historial donde el usuario sea comprador o vendedor
+        const history = await TransactionHistory.findAll({
+            where: {
+                [sequelize.Op.or]: [
+                    { BuyerUserId: finalUserId },
+                    { SellerUserId: finalUserId }
+                ]
+            },
+            include: [
+                {
+                    model: Asset,
+                    as: 'asset',
+                    attributes: ['id', 'name']
+                },
+                {
+                    model: Usuario,
+                    as: 'buyer',
+                    attributes: ['id', 'name', 'email']
+                },
+                {
+                    model: Usuario,
+                    as: 'seller',
+                    attributes: ['id', 'name', 'email']
+                }
+            ],
+            order: [['createdAt', 'DESC']]
+        });
+        res.status(200).json(history);
+    } catch (error) {
+        console.error('Error al obtener el historial del usuario:', error);
+        res.status(500).json({ message: 'Error interno al obtener el historial del usuario.', error: error.message });
+    }
+});
 
 export default router;
