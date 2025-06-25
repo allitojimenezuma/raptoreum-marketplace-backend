@@ -316,7 +316,7 @@ router.post('/:offerId/accept', authenticateToken, async (req, res) => {
 
         // --- REGISTRO EN HISTÓRICO DE TRANSACCIONES ---
         await TransactionHistory.create({
-            transactionType: 'offer-accepted',
+            transactionType: 'Oferta Aceptada',
             priceAtTransaction: assetPriceRTM,
             blockchainAssetTxId: assetTxid, // TXID de la transferencia del asset
             blockchainPaymentTxId: txid,
@@ -353,7 +353,7 @@ router.post('/:offerId/cancel', authenticateToken, async (req, res) => {
             return res.status(404).json({ message: 'Oferta no encontrada o ya procesada.' });
         }
 
-        offer.status = 'cancelled';
+        offer.status = 'Cancelada';
         offer.updatedAt = new Date();
         await offer.save();
         console.log('Oferta cancelada correctamente:', offer.id);
@@ -364,6 +364,5 @@ router.post('/:offerId/cancel', authenticateToken, async (req, res) => {
         return res.status(500).json({ message: 'Error al cancelar la oferta.', error: err.message });
     }
 });
-
 
 export default router;
