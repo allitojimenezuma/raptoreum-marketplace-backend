@@ -379,4 +379,39 @@ router.post('/:offerId/cancel', authenticateToken, async (req, res) => {
     }
 });
 
+// --- RUTA PARA RECHAZAR UNA OFERTA (por el propietario del asset) ---
+router.post('/:offerId/reject', authenticateToken, async (req, res) => {
+    const { offerId } = req.params;
+    let userId = req.user.id;
+    if (!userId && req.user.email) {
+        const usuario = await Usuario.findOne({ where: { email: req.user.email } });
+        if (usuario) userId = usuario.id;
+    }
+    try {
+        // Busca la oferta y verifica que esté pendiente
+        const offer = await Offer.findOne({ where: { id: offerId, status: 'pending' } });
+        if (!offer) {
+            return res.status(404).json({ message: 'Oferta no encontrada o ya procesada.' });
+        }
+        // Busca el asset y verifica que el usuario sea el propietario actual
+        const asset = await Asset.findOne({ where: { id: offer.AssetId } });
+        if (!asset) {
+            return res.status(404).json({ message: 'Asset no encontrado.' });
+        }
+        const wallet = await Wallet.findOne({ where: { id: asset.WalletId } });
+        if (!wallet || wallet.UsuarioId !== userId) {
+            return res.status(403).json({ message: 'No eres el propietario del asset.' });
+        }
+
+        offer.status = 'rejected';
+        offer.updatedAt = new Date();
+        await offer.save();
+
+        return res.json({ message: 'Oferta rechazada correctamente.' });
+    } catch (err) {
+        console.error('Error al rechazar la oferta:', err);
+        return res.status(500).json({ message: 'Error al rechazar la oferta.', error: err.message });
+    }
+});
+
 export default router;
