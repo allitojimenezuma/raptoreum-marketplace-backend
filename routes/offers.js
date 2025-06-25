@@ -156,6 +156,20 @@ router.post('/makeOffer', authenticateToken, async (req, res) => {
             return res.status(404).json({ message: 'Usuario oferente no encontrado.' });
         }
 
+        // --- NUEVO: Expirar ofertas pendientes cuyo expiresAt ya pasó ---
+        await Offer.update(
+            { status: 'expired' },
+            {
+                where: {
+                    OffererUserId: offerer.id, // usuario actual
+                    AssetId: assetId,
+                    status: 'pending',
+                    expiresAt: { [Op.lt]: new Date() }
+                }
+            }
+        );
+        // --- FIN NUEVO ---
+
         // 3. Obtener el asset y su propietario actual
         const asset = await Asset.findOne({
             where: { id: assetId },
