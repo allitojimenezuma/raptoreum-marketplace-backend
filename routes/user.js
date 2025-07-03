@@ -127,7 +127,7 @@ router.post('/request-password-change', async (req, res) => {
     });
     console.log('Email transporter configurado.');
 
-    const resetUrl = `http://localhost:3001/reset-password/${resetToken}`;
+    const resetUrl = `https://rtm.api.test.unknowngravity.com/reset-password/${resetToken}`;
     console.log('Reset URL creada:', resetUrl);
 
     const mailOptions = {

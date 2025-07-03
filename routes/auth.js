@@ -58,7 +58,7 @@ router.post('/signup', async (req, res) => {
     const hashed = await bcrypt.hash(password, 10);
     pendingUsers[token] = { name, email, password: hashed, createdAt: Date.now() };
 
-    const verificationLink = `http://localhost:3000/auth/verify?token=${token}`;
+    const verificationLink = `https://rtm.api.test.unknowngravity.com/api/auth/verify?token=${token}`;
 
     // Enviar correo de verificación
     await transporter.sendMail({

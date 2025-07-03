@@ -138,6 +138,11 @@ router.post('/createAsset', upload.single('foto'), async (req, res) => {
         const creationTxid = await provider.initiateAssetCreation(assetMetadata);
         console.log(`[Asset Creation Flow] Step 1: Asset creation transaction submitted. Creation TXID: ${creationTxid}`);
 
+        res.status(200).json({
+            message: 'Asset creado correctamente. Espera unos minutos para verlo en el marketplace.',
+        });
+
+
         // Step 2: Wait for Asset Creation Confirmation
         console.log(`[Asset Creation Flow] Step 2: Waiting for confirmation of creation TXID: ${creationTxid}...`);
         await provider.waitTransaction(creationTxid, 1); // Wait for 1 confirmation
@@ -186,14 +191,7 @@ router.post('/createAsset', upload.single('foto'), async (req, res) => {
             WalletId: wallet.id
         });
 
-        res.status(200).json({
-            message: 'Asset creado correctamente. Espera unos minutos para verlo en el marketplace.',
-            creationTxid: creationTxid,
-            mintTxid: mintTxid,
-            sendTxid: sendTxid,
-            numericalAssetId: numericalAssetId,
-            assetName: nombre
-        });
+        
 
     } catch (error) {
         console.error('Error creating asset:', error.message);
@@ -295,6 +293,9 @@ router.post('/buy/:id', async (req, res) => {
                 // fee is handled by default in sendRawTransaction
             );
             console.log(`[BUY FLOW] Step A: Transacción de pago enviada. TXID: ${paymentTxid}`);
+            res.json({
+                message: 'Compra realizada con éxito. Pago y transferencia de asset confirmados en la blockchain.'
+            });
             console.log(`[BUY FLOW] Step A: Esperando confirmación del pago TXID: ${paymentTxid}...`);
             await provider.waitTransaction(paymentTxid, 1);
             console.log(`[BUY FLOW] Step A: Pago TXID: ${paymentTxid} confirmado.`);
@@ -355,13 +356,7 @@ router.post('/buy/:id', async (req, res) => {
             // No detenemos la compra por esto, pero lo logueamos
         }
 
-        res.json({
-            message: 'Compra realizada con éxito. Pago y transferencia de asset confirmados en la blockchain.',
-            paymentTxid: paymentTxid,
-            assetTransferTxid: assetTransferTxid,
-            assetName: assetToBuy.name,
-            newOwnerAddress: buyerAddress
-        });
+        
     } catch (err) {
         console.error('Error general en la compra de asset:', err);
         let errorMessage = 'Error al realizar la compra';
