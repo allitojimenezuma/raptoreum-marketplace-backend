@@ -1,4 +1,4 @@
-# Raptoreum OpenSea Backend
+# Raptoreum Marketplace Backend
 
 ## Índice
 1. [Introducción](#introducción)
